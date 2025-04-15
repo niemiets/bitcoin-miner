@@ -44,7 +44,17 @@ int main()
 		return 1;
 	}
 	
-	
+	if (connect(sock, res->ai_addr, static_cast<int>(res->ai_addrlen)) == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't connect to socket: " << WSAGetLastError() << '\n';
+		return 1;
+	}
+
+	const int bytes_count = send(sock, "", 11, 0);
+
+	if (bytes_count == SOCKET_ERROR) {
+		std::cerr << "Couldn't send data: " << WSAGetLastError() << '\n';
+	}
 	
 	return 0;
 }
