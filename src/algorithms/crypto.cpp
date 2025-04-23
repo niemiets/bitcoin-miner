@@ -1,5 +1,6 @@
 #include <bit>
 #include <bitset>
+#include <cassert>
 #include <iostream>
 
 #include "algorithms/crypto.h"
@@ -46,14 +47,14 @@ constexpr uint16_t SHA_BLOCK_BIT_COUNT = 512;
 constexpr uint8_t SHA_BLOCK_SIZE = SHA_BLOCK_BIT_COUNT / (sizeof(uint8_t) * 8);
 
 constexpr uint32_t h[] = {
-	0x6a09e667,
-	0xbb67ae85,
-	0x3c6ef372,
-	0xa54ff53a,
-	0x510e527f,
-	0x9b05688c,
-	0x1f83d9ab,
-	0x5be0cd19
+	std::byteswap(static_cast<uint32_t>(0x6a09e667)),
+	std::byteswap(static_cast<uint32_t>(0xbb67ae85)),
+	std::byteswap(static_cast<uint32_t>(0x3c6ef372)),
+	std::byteswap(static_cast<uint32_t>(0xa54ff53a)),
+	std::byteswap(static_cast<uint32_t>(0x510e527f)),
+	std::byteswap(static_cast<uint32_t>(0x9b05688c)),
+	std::byteswap(static_cast<uint32_t>(0x1f83d9ab)),
+	std::byteswap(static_cast<uint32_t>(0x5be0cd19))
 };
 
 constexpr uint32_t k[] = {
@@ -71,6 +72,8 @@ uint32_t w[64];
 
 uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 {
+	assert(std::endian::native == std::endian::little); // if you have for some reason big endian integers then rewrite this function and make push request
+
 	if (bit_count == 0)
 		return new uint32_t[] {
 			0xe3b0c442,
@@ -124,57 +127,67 @@ uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 		
 		for (uint8_t j = 16; j < 64; j++)
 		{
-			w[j] = w[j - 16] + std::byteswap(ssig0(std::byteswap(w[j - 15]))) + w[j - 7] + std::byteswap(ssig1(std::byteswap(w[j - 2]))); // TODO: write custom rotr and right shift so it works (endianess problem)
+			w[j] = std::byteswap(std::byteswap(w[j - 16]) + ssig0(std::byteswap(w[j - 15])) + std::byteswap(w[j - 7]) + ssig1(std::byteswap(w[j - 2]))); // TODO: write custom big endian operators so it doesn't have to use byteswap twice
 		}
 		
 		// print message schedule
-		std::cout << "w: \n";
-		for (uint16_t j = 0; j < (64 * 4); j++)
-		{
-			if (j % 4 == 0)
-			{
-				std::cout << '\n';
-			}
-
-			std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(w)[j]);
-		}
+		// std::cout << "w: \n";
+		// for (uint16_t j = 0; j < (64 * 4); j++)
+		// {
+		// 	if (j % 4 == 0)
+		// 	{
+		// 		std::cout << '\n';
+		// 	}
+		//
+		// 	std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(w)[j]);
+		// }
 	}
 	
 	// initialize working variables
 	uint32_t *vars = new uint32_t[8];
 	memcpy(vars, h, 8 * sizeof(uint32_t));
-	uint32_t t1, t2;
-	
-	std::cout << "vars: \n";
-	for (uint16_t j = 0; j < (8 * 4); j++)
-	{
-		if (j % 4 == 0)
-		{
-			std::cout << '\n';
-		}
 
-		std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(vars)[j]) << ' ';
-	}
+	// std::cout << "vars: \n";
+	// for (uint16_t j = 0; j < (8 * 4); j++)
+	// {
+	// 	if (j % 4 == 0)
+	// 	{
+	// 		std::cout << '\n';
+	// 	}
+	//
+	// 	std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(vars)[j]) << ' ';
+	// }
 	
 	// calculate hash
 	for (uint8_t i = 0; i < 64; i++)
 	{
-		t1 = vars[7] + std::byteswap(bsig1(std::byteswap(vars[4]))) + ch(vars[4], vars[5], vars[6]) + std::byteswap(k[i]) + w[i];
-		t2 = std::byteswap(bsig0(std::byteswap(vars[0]))) + maj(vars[0], vars[1], vars[2]);
+		const uint32_t t1 = std::byteswap(std::byteswap(vars[7]) + bsig1(std::byteswap(vars[4])) + ch(std::byteswap(vars[4]), std::byteswap(vars[5]), std::byteswap(vars[6])) + k[i] + std::byteswap(w[i]));
+		const uint32_t t2 = std::byteswap(bsig0(std::byteswap(vars[0])) + maj(std::byteswap(vars[0]), std::byteswap(vars[1]), std::byteswap(vars[2])));
 		
 		vars[7] = vars[6];
 		vars[6] = vars[5];
 		vars[5] = vars[4];
-		vars[4] = vars[3] + t1;
+		vars[4] = std::byteswap(std::byteswap(vars[3]) + std::byteswap(t1));
 		vars[3] = vars[2];
 		vars[2] = vars[1];
 		vars[1] = vars[0];
-		vars[0] = t1 + t2;
+		vars[0] = std::byteswap(std::byteswap(t1) + std::byteswap(t2));
 	}
+
+	// std::cout << "vars2: \n";
+	// for (uint16_t j = 0; j < (8 * 4); j++)
+	// {
+	// 	if (j % 4 == 0)
+	// 	{
+	// 		std::cout << '\n';
+	// 	}
+	//
+	// 	std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(vars)[j]) << ' ';
+	// }
 	
 	for (uint8_t i = 0; i < 8; i++)
 	{
-		vars[i] += h[i];
+		vars[i] = std::byteswap(std::byteswap(vars[i]) + std::byteswap(h[i]));
 	}
 	
 	// // print blocks

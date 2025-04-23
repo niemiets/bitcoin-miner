@@ -148,7 +148,7 @@ int main()
 	
 	char msg[] = "chujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchujchuj";
 	
-	uint8_t *hash = reinterpret_cast<uint8_t*>(sha256(reinterpret_cast<const uint8_t*>(msg), 8 * 4));
+	uint8_t *hash = reinterpret_cast<uint8_t*>(sha256(reinterpret_cast<const uint8_t*>(msg), (sizeof(char) * 8) * 4));
 	
 	std::cout << "hash: \n";
 	for (uint8_t i = 0; i < 4 * 8; i++)
