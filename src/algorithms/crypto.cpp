@@ -46,7 +46,7 @@ constexpr inline T ssig1(T x)
 constexpr uint16_t SHA_BLOCK_BIT_COUNT = 512;
 constexpr uint8_t SHA_BLOCK_SIZE = SHA_BLOCK_BIT_COUNT / (sizeof(uint8_t) * 8);
 
-constexpr uint32_t h[] = {
+constexpr uint32_t h_const[] = {
 	std::byteswap(static_cast<uint32_t>(0x6a09e667)),
 	std::byteswap(static_cast<uint32_t>(0xbb67ae85)),
 	std::byteswap(static_cast<uint32_t>(0x3c6ef372)),
@@ -69,6 +69,7 @@ constexpr uint32_t k[] = {
 };
 
 uint32_t w[64];
+uint32_t h[8];
 
 uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 {
@@ -120,6 +121,10 @@ uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 	// set length
 	*reinterpret_cast<uint64_t*>(blocks[block_count - 1] + SHA_BLOCK_SIZE - static_cast<uint64_t>(8 / sizeof(uint8_t))) = std::byteswap(bit_count);
 	
+	// initialize working variables
+	uint32_t *vars = new uint32_t[8];
+	memcpy(h, h_const, 8 * sizeof(uint32_t));
+	
 	// extend
 	for (uint64_t i = 0; i < block_count; i++)
 	{
@@ -131,63 +136,72 @@ uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 		}
 		
 		// print message schedule
-		// std::cout << "w: \n";
-		// for (uint16_t j = 0; j < (64 * 4); j++)
-		// {
-		// 	if (j % 4 == 0)
-		// 	{
-		// 		std::cout << '\n';
-		// 	}
-		//
-		// 	std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(w)[j]);
-		// }
-	}
-	
-	// initialize working variables
-	uint32_t *vars = new uint32_t[8];
-	memcpy(vars, h, 8 * sizeof(uint32_t));
+		std::cout << "w: \n";
+		for (uint16_t j = 0; j < (64 * 4); j++)
+		{
+			if (j % 4 == 0)
+			{
+				std::cout << '\n';
+			}
 
-	// std::cout << "vars: \n";
-	// for (uint16_t j = 0; j < (8 * 4); j++)
-	// {
-	// 	if (j % 4 == 0)
-	// 	{
-	// 		std::cout << '\n';
-	// 	}
-	//
-	// 	std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(vars)[j]) << ' ';
-	// }
-	
-	// calculate hash
-	for (uint8_t i = 0; i < 64; i++)
-	{
-		const uint32_t t1 = std::byteswap(std::byteswap(vars[7]) + bsig1(std::byteswap(vars[4])) + ch(std::byteswap(vars[4]), std::byteswap(vars[5]), std::byteswap(vars[6])) + k[i] + std::byteswap(w[i]));
-		const uint32_t t2 = std::byteswap(bsig0(std::byteswap(vars[0])) + maj(std::byteswap(vars[0]), std::byteswap(vars[1]), std::byteswap(vars[2])));
+			std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(w)[j]);
+		}
 		
-		vars[7] = vars[6];
-		vars[6] = vars[5];
-		vars[5] = vars[4];
-		vars[4] = std::byteswap(std::byteswap(vars[3]) + std::byteswap(t1));
-		vars[3] = vars[2];
-		vars[2] = vars[1];
-		vars[1] = vars[0];
-		vars[0] = std::byteswap(std::byteswap(t1) + std::byteswap(t2));
-	}
+		memcpy(vars, h, 8 * sizeof(uint32_t));
+		
+		std::cout << "vars: \n";
+		for (uint16_t j = 0; j < (8 * 4); j++)
+		{
+			if (j % 4 == 0)
+			{
+				std::cout << '\n';
+			}
 
-	// std::cout << "vars2: \n";
-	// for (uint16_t j = 0; j < (8 * 4); j++)
-	// {
-	// 	if (j % 4 == 0)
-	// 	{
-	// 		std::cout << '\n';
-	// 	}
-	//
-	// 	std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(vars)[j]) << ' ';
-	// }
-	
-	for (uint8_t i = 0; i < 8; i++)
-	{
-		vars[i] = std::byteswap(std::byteswap(vars[i]) + std::byteswap(h[i]));
+			std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(vars)[j]) << ' ';
+		}
+		
+		// calculate hash
+		for (uint8_t j = 0; j < 64; j++)
+		{
+			const uint32_t t1 = std::byteswap(std::byteswap(vars[7]) + bsig1(std::byteswap(vars[4])) + ch(std::byteswap(vars[4]), std::byteswap(vars[5]), std::byteswap(vars[6])) + k[j] + std::byteswap(w[j]));
+			const uint32_t t2 = std::byteswap(bsig0(std::byteswap(vars[0])) + maj(std::byteswap(vars[0]), std::byteswap(vars[1]), std::byteswap(vars[2])));
+			
+			vars[7] = vars[6];
+			vars[6] = vars[5];
+			vars[5] = vars[4];
+			vars[4] = std::byteswap(std::byteswap(vars[3]) + std::byteswap(t1));
+			vars[3] = vars[2];
+			vars[2] = vars[1];
+			vars[1] = vars[0];
+			vars[0] = std::byteswap(std::byteswap(t1) + std::byteswap(t2));
+		}
+		
+		std::cout << "vars2: \n";
+		for (uint16_t j = 0; j < (8 * 4); j++)
+		{
+			if (j % 4 == 0)
+			{
+				std::cout << '\n';
+			}
+
+			std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(vars)[j]) << ' ';
+		}
+		
+		for (uint8_t j = 0; j < 8; j++)
+		{
+			h[j] = std::byteswap(std::byteswap(vars[j]) + std::byteswap(h[j]));
+		}
+		
+		std::cout << "hash: \n";
+		for (uint16_t j = 0; j < (8 * 4); j++)
+		{
+			if (j % 4 == 0)
+			{
+				std::cout << '\n';
+			}
+
+			std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(h)[j]) << ' ';
+		}
 	}
 	
 	// // print blocks
@@ -212,5 +226,5 @@ uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 	
 	delete[] blocks;
 	
-	return vars;
+	return h;
 }
