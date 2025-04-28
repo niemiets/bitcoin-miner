@@ -11,40 +11,32 @@ compact_size_uint::compact_size_uint(uint64_t value)
 	}
 	else if (value <= 0xFFFF)
 	{
-		const auto ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint8_t) * 2);
+		const auto ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint16_t));
 		
 		_size_ptr = ptr;
-		_data_ptr = ptr + 1;
+		_data_ptr = ptr + sizeof(uint8_t);
 		
 		*_size_ptr = 0xFD;
-		
-		// TODO: set data from le value to be data
+		*_data_ptr = static_cast<uint16_t>(value);
 	}
 	else if (value <= 0xFFFFFFFF)
 	{
-		const auto ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint8_t) * 4);
+		const auto ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint32_t));
 		
 		_size_ptr = ptr;
-		_data_ptr = ptr + 1;
+		_data_ptr = ptr + sizeof(uint8_t);
 		
 		*_size_ptr = 0xFE;
-		
-		// TODO: set data from le value to be data
+		*_data_ptr = static_cast<uint32_t>(value);
 	}
 	else if (value <= 0xFFFFFFFFFFFFFFFF)
 	{
-		const auto ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint8_t) * 8);
+		const auto ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint64_t));
 		
 		_size_ptr = ptr;
-		_data_ptr = ptr + 1;
+		_data_ptr = ptr + sizeof(uint8_t);
 		
 		*_size_ptr = 0xFF;
-		
-		// TODO: set data from le value to be data
+		*_data_ptr = static_cast<uint64_t>(value);
 	}
-}
-
-compact_size_uint compact_size_uint::from_little_endian(uint64_t value)
-{
-	return compact_size_uint(value);
 }
