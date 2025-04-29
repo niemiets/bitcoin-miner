@@ -136,29 +136,29 @@ uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 		}
 		
 		// print message schedule
-		std::cout << "w: \n";
-		for (uint16_t j = 0; j < (64 * 4); j++)
-		{
-			if (j % 4 == 0)
-			{
-				std::cout << '\n';
-			}
-
-			std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(w)[j]);
-		}
+		// std::cout << "w: \n";
+		// for (uint16_t j = 0; j < (64 * 4); j++)
+		// {
+		// 	if (j % 4 == 0)
+		// 	{
+		// 		std::cout << '\n';
+		// 	}
+		//
+		// 	std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(w)[j]);
+		// }
 		
 		memcpy(vars, h, 8 * sizeof(uint32_t));
 		
-		std::cout << "vars: \n";
-		for (uint16_t j = 0; j < (8 * 4); j++)
-		{
-			if (j % 4 == 0)
-			{
-				std::cout << '\n';
-			}
-
-			std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(vars)[j]) << ' ';
-		}
+		// std::cout << "vars: \n";
+		// for (uint16_t j = 0; j < (8 * 4); j++)
+		// {
+		// 	if (j % 4 == 0)
+		// 	{
+		// 		std::cout << '\n';
+		// 	}
+		//
+		// 	std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(vars)[j]) << ' ';
+		// }
 		
 		// calculate hash
 		for (uint8_t j = 0; j < 64; j++)
@@ -176,32 +176,32 @@ uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 			vars[0] = std::byteswap(std::byteswap(t1) + std::byteswap(t2));
 		}
 		
-		std::cout << "vars2: \n";
-		for (uint16_t j = 0; j < (8 * 4); j++)
-		{
-			if (j % 4 == 0)
-			{
-				std::cout << '\n';
-			}
-
-			std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(vars)[j]) << ' ';
-		}
+		// std::cout << "vars2: \n";
+		// for (uint16_t j = 0; j < (8 * 4); j++)
+		// {
+		// 	if (j % 4 == 0)
+		// 	{
+		// 		std::cout << '\n';
+		// 	}
+		//
+		// 	std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(vars)[j]) << ' ';
+		// }
 		
 		for (uint8_t j = 0; j < 8; j++)
 		{
 			h[j] = std::byteswap(std::byteswap(vars[j]) + std::byteswap(h[j]));
 		}
 		
-		std::cout << "hash: \n";
-		for (uint16_t j = 0; j < (8 * 4); j++)
-		{
-			if (j % 4 == 0)
-			{
-				std::cout << '\n';
-			}
-
-			std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(h)[j]) << ' ';
-		}
+		// std::cout << "hash: \n";
+		// for (uint16_t j = 0; j < (8 * 4); j++)
+		// {
+		// 	if (j % 4 == 0)
+		// 	{
+		// 		std::cout << '\n';
+		// 	}
+		//
+		// 	std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(h)[j]) << ' ';
+		// }
 	}
 	
 	// // print blocks

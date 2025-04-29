@@ -8,11 +8,16 @@
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include "algorithms/crypto.h"
 
 typedef uint8_t byte;
 
 constexpr uint32_t MAX_SIZE = 0x02000000;
-constexpr uint32_t VERSION_MSG_MIN_SIZE = 4 + 8 + 8 + 8 + 16 + 2 + 8 + 16 + 2 + 8 + 1 + 4 + 1;
+constexpr uint8_t  MSG_HEADER_SIZE = 4 + 12 + 4 + 4;
+constexpr uint32_t MSG_VERSION_MIN_SIZE = 4 + 8 + 8 + 8 + 16 + 2 + 8 + 16 + 2 + 8 + 1 + 4 + 1;
+constexpr uint32_t NET_MAINNET = std::byteswap(0xf9beb4d9);
+
+constexpr uint16_t NETWORK_BUFFER_SIZE = 1024;
 
 constexpr int SUCCESS = 0;
 
@@ -109,6 +114,8 @@ int main()
 		WSACleanup();
 		return 1;
 	}
+	
+	std::cout << "Got address info." << '\n';
 
 	const SOCKET sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 
@@ -119,6 +126,8 @@ int main()
 		WSACleanup();
 		return 1;
 	}
+	
+	std::cout << "Created socket." << '\n';
 
 	err_code = connect(sock, res->ai_addr, static_cast<int>(res->ai_addrlen));
 
@@ -130,33 +139,33 @@ int main()
 		WSACleanup();
 		return 1;
 	}
+	
+	std::cout << "Connected to socket." << '\n';
 
 	constexpr int32_t  version = 70016;
 	constexpr uint64_t services = 0x00;
 	const     int64_t  timestamp = std::time(nullptr);
 
 	constexpr uint64_t addr_recv_services = 0x00;
-	constexpr char *addr_recv_ip = "";
+	constexpr char    *addr_recv_ip = "";
 	constexpr uint16_t addr_recv_port = 8333;
 
 	constexpr uint64_t addr_trans_services = 0x00;
-	constexpr char *addr_trans_ip = "";
+	constexpr char    *addr_trans_ip = "";
 	constexpr uint16_t addr_trans_port = 8333;
 
 	constexpr uint64_t nonce = 0x000072616E646F6D;
 
-	constexpr char *user_agent = "";
+	constexpr char   *user_agent = "";
 	const     uint8_t user_agent_bytes = strnlen_s(user_agent, MAX_SIZE);
 
 	constexpr int32_t start_height = 0;
 
 	constexpr bool relay = false;
 
-	std::vector<char> payload_buffer(VERSION_MSG_MIN_SIZE + user_agent_bytes);
-
+	std::vector<char>     payload_buffer(MSG_VERSION_MIN_SIZE + user_agent_bytes);
 	const std::span<char> payload_span(payload_buffer);
-
-	std::spanstream payload_stream(payload_span, std::ios::binary | std::ios::in | std::ios::out);
+	std::spanstream       payload_stream(payload_span, std::ios::binary | std::ios::in | std::ios::out);
 
 	payload_stream
 	.write(reinterpret_cast<const char*>(&version), 4)
@@ -173,11 +182,72 @@ int main()
 	.write(reinterpret_cast<const char*>(&user_agent), user_agent_bytes)
 	.write(reinterpret_cast<const char*>(&start_height), 4)
 	.write(reinterpret_cast<const char*>(&relay), 1);
+	
+	const     char *start_string = reinterpret_cast<const char*>(&NET_MAINNET);
+	constexpr char *command_name = "version\0\0\0\0\0";
+	
+	const     uint32_t payload_size = payload_stream.span().size();
+	
+	char *checksum = reinterpret_cast<char*>(sha256(reinterpret_cast<const byte*>(payload_stream.span().data()), payload_stream.span().size() * 8));
+	checksum = reinterpret_cast<char*>(sha256(reinterpret_cast<const byte*>(checksum), 256));
+	
+	std::vector<char>     header_buffer(MSG_HEADER_SIZE);
+	const std::span<char> header_span(header_buffer);
+	std::spanstream       header_stream(header_span, std::ios::binary | std::ios::in | std::ios::out);
+	
+	header_stream
+	.write(reinterpret_cast<const char*>(start_string), 4)
+	.write(reinterpret_cast<const char*>(command_name), 12)
+	.write(reinterpret_cast<const char*>(&payload_size), 4)
+	.write(reinterpret_cast<const char*>(checksum), 4);
+	
+	for (const char &c : header_stream.span())
+	{
+		printf("%02x ", static_cast<uint16_t>(c) & 0xFF);
+	}
+	
+	std::cout << '\n';
 
 	for (const char &c : payload_stream.span())
 	{
-		std::cout << std::hex << (static_cast<int>(c) & 0xFF) << ' ';
+		printf("%02x ", static_cast<uint16_t>(c) & 0xFF);
 	}
+	
+	std::cout << '\n';
+	
+	int bytes_count;
+	
+	bytes_count = send(sock, header_stream.span().data(), static_cast<int>(header_stream.span().size()), 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't send data: " << WSAGetLastError() << '\n';
+		return 1;
+	}
+	
+	std::cout << "Sent data." << '\n';
+	
+	bytes_count = send(sock, payload_stream.span().data(), static_cast<int>(payload_stream.span().size()), 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't send data: " << WSAGetLastError() << '\n';
+		return 1;
+	}
+	
+	std::cout << "Sent data." << '\n';
+	
+	char message_buffer[NETWORK_BUFFER_SIZE];
+	
+	bytes_count = recv(sock, message_buffer, NETWORK_BUFFER_SIZE, 0);
+	
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive data: " << WSAGetLastError() << '\n';
+		return 1;
+	}
+	
+	std::cout << "Recieved " << bytes_count << " bytes in message: ";
 
 	freeaddrinfo(res);
 	closesocket(sock);
