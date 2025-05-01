@@ -13,6 +13,7 @@
 #include <ws2tcpip.h>
 
 #include "algorithms/crypto.h"
+#include "bitcoin/network_type.h"
 
 typedef uint8_t byte;
 
@@ -21,7 +22,6 @@ constexpr uint64_t MAX_UINT64 = 0xFFFFFFFFFFFFFFFF;
 constexpr uint32_t MAX_SIZE = 0x02000000;
 constexpr uint8_t  MSG_HEADER_SIZE = 4 + 12 + 4 + 4;
 constexpr uint32_t MSG_VERSION_MIN_SIZE = 4 + 8 + 8 + 8 + 16 + 2 + 8 + 16 + 2 + 8 + 1 + 4 + 1;
-constexpr uint32_t NET_MAINNET = std::byteswap(0xf9beb4d9);
 
 constexpr uint16_t NETWORK_BUFFER_SIZE = 1024;
 
@@ -85,7 +85,7 @@ int main()
 	// std::cout.write(reinterpret_cast<char*>(ns.data()), static_cast<std::streamsize>(ns.size()));
 
 	const char *HOSTNAME = "16.16.139.80";
-	const char *PORT	 = "8333";
+	const char *PORT	 = mainnet::port_string;
 
 	std::random_device rand_dev;
 	std::mt19937_64 rng(rand_dev());
@@ -100,6 +100,7 @@ int main()
 	if (err_code != SUCCESS)
 	{
 		std::cerr << "Couldn't initiate winsock dll: " << err_code << '\n';
+		
 		return 1;
 	}
 
@@ -121,7 +122,9 @@ int main()
 	if (err_code != SUCCESS)
 	{
 		std::cerr << "Couldn't get address info: " << err_code << '\n';
+		
 		WSACleanup();
+		
 		return 1;
 	}
 	
@@ -132,8 +135,10 @@ int main()
 	if (sock == INVALID_SOCKET)
 	{
 		std::cerr << "Couldn't create socket: " << WSAGetLastError() << '\n';
+		
 		freeaddrinfo(res);
 		WSACleanup();
+		
 		return 1;
 	}
 	
@@ -144,9 +149,11 @@ int main()
 	if (err_code == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't connect to socket: " << WSAGetLastError() << '\n';
+		
 		freeaddrinfo(res);
 		closesocket(sock);
 		WSACleanup();
+		
 		return 1;
 	}
 	
@@ -158,11 +165,11 @@ int main()
 
 	constexpr uint64_t addr_recv_services = 0x00;
 	constexpr char    *addr_recv_ip = "";
-	constexpr uint16_t addr_recv_port = 8333;
+	constexpr uint16_t addr_recv_port = mainnet::port;
 
 	constexpr uint64_t addr_trans_services = 0x00;
 	constexpr char    *addr_trans_ip = "";
-	constexpr uint16_t addr_trans_port = 8333;
+	constexpr uint16_t addr_trans_port = mainnet::port;
 
 	const     uint64_t nonce = nonce_distribution(rng);
 
@@ -193,7 +200,7 @@ int main()
 	.write(reinterpret_cast<const char*>(&start_height), 4)
 	.write(reinterpret_cast<const char*>(&relay), 1);
 	
-	const     char *start_string = reinterpret_cast<const char*>(&NET_MAINNET);
+	const     char *start_string = mainnet::start_string;
 	constexpr char *command_name = "version\0\0\0\0\0";
 	
 	const     uint32_t payload_size = payload_stream.span().size();
@@ -234,9 +241,11 @@ int main()
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't send message header: " << WSAGetLastError() << '\n';
+		
 		freeaddrinfo(res);
 		closesocket(sock);
 		WSACleanup();
+		
 		return 1;
 	}
 	
@@ -247,9 +256,11 @@ int main()
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't send message payload: " << WSAGetLastError() << '\n';
+		
 		freeaddrinfo(res);
 		closesocket(sock);
 		WSACleanup();
+		
 		return 1;
 	}
 	
@@ -262,9 +273,11 @@ int main()
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't receive start string: " << WSAGetLastError() << '\n';
+		
 		freeaddrinfo(res);
 		closesocket(sock);
 		WSACleanup();
+		
 		return 1;
 	}
 	
@@ -286,9 +299,11 @@ int main()
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't receive command name: " << WSAGetLastError() << '\n';
+		
 		freeaddrinfo(res);
 		closesocket(sock);
 		WSACleanup();
+		
 		return 1;
 	}
 
@@ -310,9 +325,11 @@ int main()
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't receive payload size: " << WSAGetLastError() << '\n';
+		
 		freeaddrinfo(res);
 		closesocket(sock);
 		WSACleanup();
+		
 		return 1;
 	}
 
@@ -334,9 +351,11 @@ int main()
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't receive checksum: " << WSAGetLastError() << '\n';
+		
 		freeaddrinfo(res);
 		closesocket(sock);
 		WSACleanup();
+		
 		return 1;
 	}
 
@@ -356,13 +375,17 @@ int main()
 	if (memcmp(recv_command_name, "version\0\0\0\0\0", 12) != 0)
 	{
 		std::cerr << "Didn't receive correct command name (version): " << WSAGetLastError() << '\n';
+		
 		freeaddrinfo(res);
 		closesocket(sock);
 		WSACleanup();
+		
 		return 1;
 	}
 
 	freeaddrinfo(res);
 	closesocket(sock);
 	WSACleanup();
+	
+	return 0;
 }
