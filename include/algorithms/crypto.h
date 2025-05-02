@@ -3,6 +3,6 @@
 
 #include <cstdint>
 
-uint32_t* sha256(const uint8_t* message, size_t bit_count);
+void sha256(const uint8_t* message, const uint64_t bit_count, uint32_t hash[8]);
 
 #endif //MINER_CRYPTO_H

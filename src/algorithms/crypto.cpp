@@ -2,6 +2,7 @@
 #include <bitset>
 #include <cassert>
 #include <iostream>
+#include <string.h>
 
 #include "algorithms/crypto.h"
 
@@ -69,27 +70,28 @@ constexpr uint32_t k[] = {
 };
 
 uint32_t w[64];
-uint32_t h[8];
 
-uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
+void sha256(const uint8_t* message, const uint64_t bit_count, uint32_t hash[8])
 {
 	assert(std::endian::native == std::endian::little); // if you have for some reason big endian integers then rewrite this function and make push request
 
 	if (bit_count == 0)
-		return new uint32_t[] {
-			0xe3b0c442,
-			0x98fc1c14,
-			0x9afbf4c8,
-			0x996fb924,
-			0x27ae41e4,
-			0x649b934c,
-			0xa495991b,
-			0x7852b855
-		};
+	{
+		hash[0] = 0xe3b0c442;
+		hash[1] = 0x98fc1c14;
+		hash[2] = 0x9afbf4c8;
+		hash[3] = 0x996fb924;
+		hash[4] = 0x27ae41e4;
+		hash[5] = 0x649b934c;
+		hash[6] = 0xa495991b;
+		hash[7] = 0x7852b855;
+
+		return;
+	}
 	
-	uint64_t message_size = (((bit_count - 1) / 8) + 1);
+	const uint64_t message_size = (((bit_count - 1) / 8) + 1);
 	
-	uint64_t block_count = ((bit_count + 1 + 64 - 1) / SHA_BLOCK_BIT_COUNT) + 1; // bit_count + the one 1 bit + 64 bit length - 1 because we want it to increment when its above 512
+	const uint64_t block_count = ((bit_count + 1 + 64 - 1) / SHA_BLOCK_BIT_COUNT) + 1; // bit_count + the one 1 bit + 64 bit length - 1 because we want it to increment when its above 512
 	
 	uint8_t **blocks = new uint8_t*[block_count];
 	
@@ -123,18 +125,18 @@ uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 	
 	// initialize working variables
 	uint32_t *vars = new uint32_t[8];
-	memcpy(h, h_const, 8 * sizeof(uint32_t));
-	
+	memcpy(hash, h_const, 8 * sizeof(uint32_t));
+
 	// extend
 	for (uint64_t i = 0; i < block_count; i++)
 	{
 		memcpy(w, blocks[i], SHA_BLOCK_SIZE);
-		
+
 		for (uint8_t j = 16; j < 64; j++)
 		{
 			w[j] = std::byteswap(std::byteswap(w[j - 16]) + ssig0(std::byteswap(w[j - 15])) + std::byteswap(w[j - 7]) + ssig1(std::byteswap(w[j - 2]))); // TODO: write custom big endian operators so it doesn't have to use byteswap twice
 		}
-		
+
 		// print message schedule
 		// std::cout << "w: \n";
 		// for (uint16_t j = 0; j < (64 * 4); j++)
@@ -146,9 +148,9 @@ uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 		//
 		// 	std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(w)[j]);
 		// }
-		
-		memcpy(vars, h, 8 * sizeof(uint32_t));
-		
+
+		memcpy(vars, hash, 8 * sizeof(uint32_t));
+
 		// std::cout << "vars: \n";
 		// for (uint16_t j = 0; j < (8 * 4); j++)
 		// {
@@ -159,13 +161,13 @@ uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 		//
 		// 	std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(vars)[j]) << ' ';
 		// }
-		
+
 		// calculate hash
 		for (uint8_t j = 0; j < 64; j++)
 		{
 			const uint32_t t1 = std::byteswap(std::byteswap(vars[7]) + bsig1(std::byteswap(vars[4])) + ch(std::byteswap(vars[4]), std::byteswap(vars[5]), std::byteswap(vars[6])) + k[j] + std::byteswap(w[j]));
 			const uint32_t t2 = std::byteswap(bsig0(std::byteswap(vars[0])) + maj(std::byteswap(vars[0]), std::byteswap(vars[1]), std::byteswap(vars[2])));
-			
+
 			vars[7] = vars[6];
 			vars[6] = vars[5];
 			vars[5] = vars[4];
@@ -175,7 +177,7 @@ uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 			vars[1] = vars[0];
 			vars[0] = std::byteswap(std::byteswap(t1) + std::byteswap(t2));
 		}
-		
+
 		// std::cout << "vars2: \n";
 		// for (uint16_t j = 0; j < (8 * 4); j++)
 		// {
@@ -186,12 +188,12 @@ uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 		//
 		// 	std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(vars)[j]) << ' ';
 		// }
-		
+
 		for (uint8_t j = 0; j < 8; j++)
 		{
-			h[j] = std::byteswap(std::byteswap(vars[j]) + std::byteswap(h[j]));
+			hash[j] = std::byteswap(std::byteswap(vars[j]) + std::byteswap(hash[j]));
 		}
-		
+
 		// std::cout << "hash: \n";
 		// for (uint16_t j = 0; j < (8 * 4); j++)
 		// {
@@ -203,7 +205,7 @@ uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 		// 	std::cout << std::bitset<8>(reinterpret_cast<uint8_t*>(h)[j]) << ' ';
 		// }
 	}
-	
+
 	// // print blocks
 	// std::cout << "blocks: \n";
 	// for (uint64_t i = 0; i < block_count; i++)
@@ -218,13 +220,11 @@ uint32_t* sha256(const uint8_t* message, uint64_t bit_count)
 	// 		std::cout << std::bitset<8>(blocks[i][j]) << ' ';
 	// 	}
 	// }
-	
+
 	for (uint64_t i = 0; i < block_count; i++)
 	{
 		delete[] blocks[i];
 	}
-	
+
 	delete[] blocks;
-	
-	return h;
 }
