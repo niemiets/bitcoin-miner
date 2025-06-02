@@ -22,7 +22,7 @@ constexpr uint64_t MAX_UINT64 = 0xFFFFFFFFFFFFFFFF;
 
 constexpr uint32_t MAX_SIZE = 0x02000000;
 constexpr uint8_t  MSG_HEADER_SIZE = 4 + 12 + 4 + 4;
-constexpr uint32_t MSG_VERSION_MIN_SIZE = 4 + 8 + 8 + 8 + 16 + 2 + 8 + 16 + 2 + 8 + 1 + 4 + 1;
+constexpr uint32_t MSG_VERSION_MIN_SIZE = 4 + 8 + 8 + 8 + 16 + 2 + 8 + 16 + 2 + 8 + 1 + 4;
 
 constexpr uint16_t NETWORK_BUFFER_SIZE = 1024;
 
@@ -87,7 +87,7 @@ int main()
 	//
 	// std::cout.write(reinterpret_cast<char*>(ns.data()), static_cast<std::streamsize>(ns.size()));
 
-	const char *HOSTNAME = "16.16.139.80";
+	const char *HOSTNAME = "188.214.129.52";
 	const char *PORT	 = mainnet::port_string;
 
 	std::random_device rand_dev;
@@ -184,7 +184,7 @@ int main()
 
 	constexpr bool relay = false;
 
-	std::vector<char> payload_buffer(MSG_VERSION_MIN_SIZE + user_agent_bytes);
+	std::vector<char> payload_buffer(MSG_VERSION_MIN_SIZE + user_agent_bytes + 1);
 	const std::span   payload_span(payload_buffer);
 	std::spanstream   payload_stream(payload_span, std::ios::binary | std::ios::in | std::ios::out);
 
@@ -519,8 +519,139 @@ int main()
 	}
 
 	std::cout << '\n';
+	
+	uint64_t recv_user_agent_bytes = 0;
+	
+	bytes_count = recv(sock, reinterpret_cast<char*>(&recv_user_agent_bytes), 1, 0);
 
-	// TODO: receive rest or version message
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive user agent bytes: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Recieved " << bytes_count << " bytes.\n";
+
+	std::cout << "Recieved user agent bytes:\n";
+
+	for (uint8_t i = 0; i < 1; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&recv_user_agent_bytes) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	uint8_t recv_user_agent_bytes_size = 0;
+	
+	if (recv_user_agent_bytes > 0xFC)
+	{
+		switch (recv_user_agent_bytes)
+		{
+			case 0xFD:
+				recv_user_agent_bytes_size = 2;
+				break;
+			case 0xFE:
+				recv_user_agent_bytes_size = 4;
+				break;
+			case 0xFF:
+				recv_user_agent_bytes_size = 8;
+				break;
+			default:
+				std::cerr << "Impossible user agent bytes value: " << recv_user_agent_bytes;
+				
+				return 1;
+		}
+		
+		bytes_count = recv(sock, reinterpret_cast<char *>(&recv_user_agent_bytes), recv_user_agent_bytes_size, 0);
+		
+		if (bytes_count == SOCKET_ERROR)
+		{
+			std::cerr << "Couldn't receive user agent bytes: " << WSAGetLastError() << '\n';
+			
+			return 1;
+		}
+		
+		std::cout << "Recieved " << bytes_count << " bytes.\n";
+		
+		std::cout << "Recieved user agent bytes:\n";
+		
+		for (uint8_t i = 0; i < recv_user_agent_bytes_size; i++)
+		{
+			printf("%02x ", *(reinterpret_cast<uint8_t *>(&recv_user_agent_bytes) + i) & 0xFF);
+		}
+		
+		std::cout << '\n';
+	}
+	
+	char *recv_user_agent = new char[recv_user_agent_bytes];
+
+	bytes_count = recv(sock, recv_user_agent, (int32_t)recv_user_agent_bytes, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive user agent: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Recieved " << bytes_count << " bytes.\n";
+
+	std::cout << "Recieved user agent:\n";
+
+	for (uint64_t i = 0; i < recv_user_agent_bytes; i++)
+	{
+		printf("%02x ", static_cast<uint8_t>(recv_user_agent[i]) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	uint16_t recv_start_height;
+
+	bytes_count = recv(sock, reinterpret_cast<char*>(&recv_start_height), 4, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive start height: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Recieved " << bytes_count << " bytes.\n";
+
+	std::cout << "Recieved start height:\n";
+
+	for (uint8_t i = 0; i < 4; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&recv_start_height) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	bool recv_relay = true;
+	
+	if (msg_header.payload_size - (MSG_VERSION_MIN_SIZE + recv_user_agent_bytes_size) > 0)
+	{
+		bytes_count = recv(sock, reinterpret_cast<char*>(&recv_relay), 1, 0);
+	
+		if (bytes_count == SOCKET_ERROR)
+		{
+			std::cerr << "Couldn't receive relay: " << WSAGetLastError() << '\n';
+	
+			return 1;
+		}
+	
+		std::cout << "Recieved " << bytes_count << " bytes.\n";
+	
+		std::cout << "Recieved relay:\n";
+	
+		for (uint8_t i = 0; i < 1; i++)
+		{
+			printf("%02x ", *(reinterpret_cast<uint8_t*>(&recv_relay) + i) & 0xFF);
+		}
+	
+		std::cout << '\n';
+	}
 
 	freeaddrinfo(res);
 	closesocket(sock);
