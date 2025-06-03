@@ -6,15 +6,15 @@
 struct compact_size_uint
 {
 	public:
-		uint8_t size();
+		uint8_t  size();
 		uint64_t data();
 		
 		compact_size_uint(uint64_t value);
 		~compact_size_uint();
 		
 	private:
-		uint8_t *_size_ptr;
-		uint8_t *_data_ptr;
+		uint8_t  *_size_ptr;
+		uint64_t *_data_ptr;
 };
 
 #endif //MINER_COMPACT_SIZE_UINT_H
