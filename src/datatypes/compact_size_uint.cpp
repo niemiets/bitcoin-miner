@@ -1,10 +1,6 @@
-#include <stdlib.h>
-#include <bitset>
-#include <stdexcept>
-
 #include "datatypes/compact_size_uint.h"
 
-uint8_t compact_size_uint::size()
+uint8_t compact_size_uint::size() const
 {
 	switch (*_size_ptr)
 	{
@@ -19,7 +15,7 @@ uint8_t compact_size_uint::size()
 	}
 }
 
-uint64_t compact_size_uint::data()
+uint64_t compact_size_uint::data() const
 {
 	switch (size())
 	{

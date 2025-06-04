@@ -7,6 +7,7 @@ add_executable(${PROJECT_NAME}
         src/main.cpp
         src/app/app.cpp
         src/algorithms/crypto.cpp
+        src/datatypes/compact_size_uint.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE include)

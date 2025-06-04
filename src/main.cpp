@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -15,6 +16,7 @@
 #include "algorithms/crypto.h"
 #include "bitcoin/message_header.h"
 #include "bitcoin/network_type.h"
+#include "bitcoin/messages/message_version.h"
 
 typedef uint8_t byte;
 
@@ -25,6 +27,8 @@ constexpr uint8_t  MSG_HEADER_SIZE = 4 + 12 + 4 + 4;
 constexpr uint32_t MSG_VERSION_MIN_SIZE = 4 + 8 + 8 + 8 + 16 + 2 + 8 + 16 + 2 + 8 + 1 + 4;
 
 constexpr uint16_t NETWORK_BUFFER_SIZE = 1024;
+
+constexpr uint32_t MSG_VERACK_CHECKSUM = std::byteswap(0x5df6e0e2);
 
 constexpr int SUCCESS = 0;
 
@@ -75,7 +79,9 @@ constexpr int SUCCESS = 0;
 // 	return true;
 // }
 
+int discard(const SOCKET &sock, uint64_t length, int flags = 0);
 int recv_message_header(const SOCKET &sock, message_header &msg_header);
+int recv_message_version(const SOCKET &sock, const message_header &msg_header, message_version &msg_version);
 
 int main()
 {
@@ -177,14 +183,14 @@ int main()
 
 	const     uint64_t nonce = nonce_distribution(rng);
 
-	constexpr char    *user_agent = "";
-	const     uint8_t  user_agent_bytes = strnlen_s(user_agent, MAX_SIZE);
+	constexpr char             *user_agent = "";
+	const     compact_size_uint user_agent_bytes(strnlen_s(user_agent, MAX_SIZE));
 
 	constexpr int32_t start_height = 0;
 
 	constexpr bool relay = false;
 
-	std::vector<char> payload_buffer(MSG_VERSION_MIN_SIZE + user_agent_bytes + 1);
+	std::vector<char> payload_buffer(MSG_VERSION_MIN_SIZE + user_agent_bytes.data() + 1);
 	const std::span   payload_span(payload_buffer);
 	std::spanstream   payload_stream(payload_span, std::ios::binary | std::ios::in | std::ios::out);
 
@@ -199,15 +205,15 @@ int main()
 	.write(reinterpret_cast<const char*>(&addr_trans_ip), 16)
 	.write(reinterpret_cast<const char*>(&addr_trans_port), 2)
 	.write(reinterpret_cast<const char*>(&nonce), 8)
-	.write(reinterpret_cast<const char*>(&user_agent_bytes), sizeof(user_agent_bytes))
-	.write(reinterpret_cast<const char*>(&user_agent), user_agent_bytes)
+	.write(reinterpret_cast<const char*>(*user_agent_bytes), user_agent_bytes.size())
+	.write(reinterpret_cast<const char*>(&user_agent), (long long)user_agent_bytes.data())
 	.write(reinterpret_cast<const char*>(&start_height), 4)
 	.write(reinterpret_cast<const char*>(&relay), 1);
 	
-	const     char *start_string = mainnet::start_string;
-	constexpr char *command_name = "version\0\0\0\0\0";
+	const char *start_string = mainnet::start_string;
+	      char *command_name = "version\0\0\0\0\0";
 	
-	const uint32_t payload_size = payload_stream.span().size();
+	uint32_t payload_size = payload_stream.span().size();
 
 	char checksum[32];
 
@@ -231,7 +237,7 @@ int main()
 		printf("%02x ", static_cast<uint8_t>(c) & 0xFF);
 	}
 	
-	std::cout << "\nMessage payload:\n";;
+	std::cout << "\nMessage payload:\n";
 
 	for (const char &c : payload_stream.span())
 	{
@@ -255,7 +261,7 @@ int main()
 		return 1;
 	}
 	
-	std::cout << "Sent message header." << '\n';
+	std::cout << "Sent message header.\n";
 	
 	bytes_count = send(sock, payload_stream.span().data(), static_cast<int>(payload_stream.span().size()), 0);
 
@@ -270,394 +276,184 @@ int main()
 		return 1;
 	}
 	
-	std::cout << "Sent message payload." << '\n';
+	std::cout << "Sent message payload.\n";
 
-	message_header msg_header;
+	message_header msg_header{};
 	
-	err_code = recv_message_header(sock, msg_header);
-
-	if (err_code != SUCCESS)
+	while (true)
 	{
-		std::cerr << "Couldn't receive message Header." << '\n';
-
-		freeaddrinfo(res);
-		closesocket(sock);
-		WSACleanup();
-
-		return 1;
-	}
-
-	std::cout << "Recieved message header.\n";
-
-	if (memcmp(msg_header.command_name, "version\0\0\0\0\0", 12) != 0)
-	{
-		std::cerr << "Didn't receive correct command name (version): " << WSAGetLastError() << '\n';
+		std::cout << "Waiting for message header.\n";
 		
-		freeaddrinfo(res);
-		closesocket(sock);
-		WSACleanup();
+		err_code = recv_message_header(sock, msg_header);
 		
-		return 1;
-	}
-
-	int32_t recv_version;
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&recv_version), 4, 0);
-
-	if (bytes_count == SOCKET_ERROR)
-	{
-		std::cerr << "Couldn't receive version: " << WSAGetLastError() << '\n';
-
-		return 1;
-	}
-
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
-
-	std::cout << "Recieved version:\n";
-
-	for (uint8_t i = 0; i < 4; i++)
-	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&recv_version) + i) & 0xFF);
-	}
-
-	std::cout << '\n';
-
-	uint64_t recv_services;
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&recv_services), 8, 0);
-
-	if (bytes_count == SOCKET_ERROR)
-	{
-		std::cerr << "Couldn't receive services: " << WSAGetLastError() << '\n';
-
-		return 1;
-	}
-
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
-
-	std::cout << "Recieved services:\n";
-
-	for (uint8_t i = 0; i < 8; i++)
-	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&recv_services) + i) & 0xFF);
-	}
-
-	std::cout << '\n';
-
-	int64_t recv_timestamp;
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&recv_timestamp), 8, 0);
-
-	if (bytes_count == SOCKET_ERROR)
-	{
-		std::cerr << "Couldn't receive timestamp: " << WSAGetLastError() << '\n';
-
-		return 1;
-	}
-
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
-
-	std::cout << "Recieved timestamp:\n";
-
-	for (uint8_t i = 0; i < 8; i++)
-	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&recv_timestamp) + i) & 0xFF);
-	}
-
-	std::cout << '\n';
-
-	uint64_t recv_addr_recv_services;
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&recv_addr_recv_services), 8, 0);
-
-	if (bytes_count == SOCKET_ERROR)
-	{
-		std::cerr << "Couldn't receive receiver services: " << WSAGetLastError() << '\n';
-
-		return 1;
-	}
-
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
-
-	std::cout << "Recieved receiver services:\n";
-
-	for (uint8_t i = 0; i < 8; i++)
-	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&recv_addr_recv_services) + i) & 0xFF);
-	}
-
-	std::cout << '\n';
-
-	char recv_addr_recv_ip[16];
-
-	bytes_count = recv(sock, recv_addr_recv_ip, 16, 0);
-
-	if (bytes_count == SOCKET_ERROR)
-	{
-		std::cerr << "Couldn't receive receiver ip: " << WSAGetLastError() << '\n';
-
-		return 1;
-	}
-
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
-
-	std::cout << "Recieved receiver ip:\n";
-
-	for (const char &c : recv_addr_recv_ip)
-	{
-		printf("%02x ", static_cast<uint8_t>(c) & 0xFF);
-	}
-
-	std::cout << '\n';
-
-	uint16_t recv_addr_recv_port;
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&recv_addr_recv_port), 2, 0);
-
-	if (bytes_count == SOCKET_ERROR)
-	{
-		std::cerr << "Couldn't receive receiver port: " << WSAGetLastError() << '\n';
-
-		return 1;
-	}
-
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
-
-	std::cout << "Recieved receiver port:\n";
-
-	for (uint8_t i = 0; i < 2; i++)
-	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&recv_addr_recv_port) + i) & 0xFF);
-	}
-
-	std::cout << '\n';
-
-	uint64_t recv_addr_trans_services;
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&recv_addr_trans_services), 8, 0);
-
-	if (bytes_count == SOCKET_ERROR)
-	{
-		std::cerr << "Couldn't receive transmitter services: " << WSAGetLastError() << '\n';
-
-		return 1;
-	}
-
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
-
-	std::cout << "Recieved transmitter services:\n";
-
-	for (uint8_t i = 0; i < 8; i++)
-	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&recv_addr_trans_services) + i) & 0xFF);
-	}
-
-	std::cout << '\n';
-
-	char recv_addr_trans_ip[16];
-
-	bytes_count = recv(sock, recv_addr_trans_ip, 16, 0);
-
-	if (bytes_count == SOCKET_ERROR)
-	{
-		std::cerr << "Couldn't receive transmitter ip: " << WSAGetLastError() << '\n';
-
-		return 1;
-	}
-
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
-
-	std::cout << "Recieved transmitter ip:\n";
-
-	for (const char &c : recv_addr_trans_ip)
-	{
-		printf("%02x ", static_cast<uint8_t>(c) & 0xFF);
-	}
-
-	std::cout << '\n';
-
-	uint16_t recv_addr_trans_port;
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&recv_addr_trans_port), 2, 0);
-
-	if (bytes_count == SOCKET_ERROR)
-	{
-		std::cerr << "Couldn't receive transmitter port: " << WSAGetLastError() << '\n';
-
-		return 1;
-	}
-
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
-
-	std::cout << "Recieved transmitter port:\n";
-
-	for (uint8_t i = 0; i < 2; i++)
-	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&recv_addr_trans_port) + i) & 0xFF);
-	}
-
-	std::cout << '\n';
-
-	uint64_t recv_nonce;
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&recv_nonce), 8, 0);
-
-	if (bytes_count == SOCKET_ERROR)
-	{
-		std::cerr << "Couldn't receive nonce: " << WSAGetLastError() << '\n';
-
-		return 1;
-	}
-
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
-
-	std::cout << "Recieved nonce:\n";
-
-	for (uint8_t i = 0; i < 8; i++)
-	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&recv_nonce) + i) & 0xFF);
-	}
-
-	std::cout << '\n';
-	
-	uint64_t recv_user_agent_bytes = 0;
-	
-	bytes_count = recv(sock, reinterpret_cast<char*>(&recv_user_agent_bytes), 1, 0);
-
-	if (bytes_count == SOCKET_ERROR)
-	{
-		std::cerr << "Couldn't receive user agent bytes: " << WSAGetLastError() << '\n';
-
-		return 1;
-	}
-
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
-
-	std::cout << "Recieved user agent bytes:\n";
-
-	for (uint8_t i = 0; i < 1; i++)
-	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&recv_user_agent_bytes) + i) & 0xFF);
-	}
-
-	std::cout << '\n';
-	
-	uint8_t recv_user_agent_bytes_size = 0;
-	
-	if (recv_user_agent_bytes > 0xFC)
-	{
-		switch (recv_user_agent_bytes)
+		if (err_code != SUCCESS)
 		{
-			case 0xFD:
-				recv_user_agent_bytes_size = 2;
-				break;
-			case 0xFE:
-				recv_user_agent_bytes_size = 4;
-				break;
-			case 0xFF:
-				recv_user_agent_bytes_size = 8;
-				break;
-			default:
-				std::cerr << "Impossible user agent bytes value: " << recv_user_agent_bytes;
-				
-				return 1;
-		}
-		
-		bytes_count = recv(sock, reinterpret_cast<char *>(&recv_user_agent_bytes), recv_user_agent_bytes_size, 0);
-		
-		if (bytes_count == SOCKET_ERROR)
-		{
-			std::cerr << "Couldn't receive user agent bytes: " << WSAGetLastError() << '\n';
+			std::cerr << "Couldn't receive message header.\n";
+			
+			freeaddrinfo(res);
+			closesocket(sock);
+			WSACleanup();
 			
 			return 1;
 		}
 		
-		std::cout << "Recieved " << bytes_count << " bytes.\n";
+		std::cout << "Received message header.\n";
 		
-		std::cout << "Recieved user agent bytes:\n";
+		if (memcmp(msg_header.command_name, "version\0\0\0\0\0", 12) == 0)
+			break;
 		
-		for (uint8_t i = 0; i < recv_user_agent_bytes_size; i++)
 		{
-			printf("%02x ", *(reinterpret_cast<uint8_t *>(&recv_user_agent_bytes) + i) & 0xFF);
+			char tmp[13];
+			tmp[12] = '\0';
+			memcpy(tmp, msg_header.command_name, 12);
+			
+			std::cout << "Expected command name to be version but got " << tmp << ".\n";
 		}
 		
-		std::cout << '\n';
-	}
-	
-	char *recv_user_agent = new char[recv_user_agent_bytes];
-
-	bytes_count = recv(sock, recv_user_agent, (int32_t)recv_user_agent_bytes, 0);
-
-	if (bytes_count == SOCKET_ERROR)
-	{
-		std::cerr << "Couldn't receive user agent: " << WSAGetLastError() << '\n';
-
-		return 1;
-	}
-
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
-
-	std::cout << "Recieved user agent:\n";
-
-	for (uint64_t i = 0; i < recv_user_agent_bytes; i++)
-	{
-		printf("%02x ", static_cast<uint8_t>(recv_user_agent[i]) & 0xFF);
-	}
-
-	std::cout << '\n';
-	
-	uint16_t recv_start_height;
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&recv_start_height), 4, 0);
-
-	if (bytes_count == SOCKET_ERROR)
-	{
-		std::cerr << "Couldn't receive start height: " << WSAGetLastError() << '\n';
-
-		return 1;
-	}
-
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
-
-	std::cout << "Recieved start height:\n";
-
-	for (uint8_t i = 0; i < 4; i++)
-	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&recv_start_height) + i) & 0xFF);
-	}
-
-	std::cout << '\n';
-	
-	bool recv_relay = true;
-	
-	if (msg_header.payload_size - (MSG_VERSION_MIN_SIZE + recv_user_agent_bytes_size) > 0)
-	{
-		bytes_count = recv(sock, reinterpret_cast<char*>(&recv_relay), 1, 0);
-	
-		if (bytes_count == SOCKET_ERROR)
+		std::cout << "Discarding message payload.\n";
+		
+		err_code = discard(sock, msg_header.payload_size);
+		
+		if (err_code != SUCCESS)
 		{
-			std::cerr << "Couldn't receive relay: " << WSAGetLastError() << '\n';
-	
+			std::cerr << "Couldn't discard message payload.\n";
+			
+			freeaddrinfo(res);
+			closesocket(sock);
+			WSACleanup();
+			
 			return 1;
 		}
-	
-		std::cout << "Recieved " << bytes_count << " bytes.\n";
-	
-		std::cout << "Recieved relay:\n";
-	
-		for (uint8_t i = 0; i < 1; i++)
-		{
-			printf("%02x ", *(reinterpret_cast<uint8_t*>(&recv_relay) + i) & 0xFF);
-		}
-	
-		std::cout << '\n';
+		
+		std::cout << "Discarded message payload.\n";
 	}
+	
+	message_version msg_version;
+	
+	err_code = recv_message_version(sock, msg_header, msg_version);
+	
+	if (err_code != SUCCESS)
+	{
+		std::cerr << "Couldn't receive message version." << '\n';
+
+		freeaddrinfo(res);
+		closesocket(sock);
+		WSACleanup();
+
+		return 1;
+	}
+
+	std::cout << "Received message version.\n";
+	
+	while (true)
+	{
+		std::cout << "Waiting for message header.\n";
+		
+		err_code = recv_message_header(sock, msg_header);
+		
+		if (err_code != SUCCESS)
+		{
+			std::cerr << "Couldn't receive message header.\n";
+			
+			freeaddrinfo(res);
+			closesocket(sock);
+			WSACleanup();
+			
+			return 1;
+		}
+		
+		std::cout << "Received message header.\n";
+		
+		if (memcmp(msg_header.command_name, "verack\0\0\0\0\0\0", 12) == 0)
+			break;
+		
+		{
+			char tmp[13];
+			tmp[12] = '\0';
+			memcpy(tmp, msg_header.command_name, 12);
+			
+			std::cout << "Expected command name to be verack but got " << tmp << ".\n";
+		}
+		
+		std::cout << "Discarding message payload.\n";
+		
+		err_code = discard(sock, msg_header.payload_size);
+		
+		if (err_code != SUCCESS)
+		{
+			std::cerr << "Couldn't discard message payload.\n";
+			
+			freeaddrinfo(res);
+			closesocket(sock);
+			WSACleanup();
+			
+			return 1;
+		}
+		
+		std::cout << "Discarded message payload.\n";
+	}
+	
+	command_name = "verack\0\0\0\0\0\0";
+	
+	payload_size = 0;
+	
+	header_stream.seekp(0);
+
+	header_stream
+	.write(reinterpret_cast<const char*>(start_string), 4)
+	.write(reinterpret_cast<const char*>(command_name), 12)
+	.write(reinterpret_cast<const char*>(&payload_size), 4)
+	.write(reinterpret_cast<const char*>(&MSG_VERACK_CHECKSUM), 4);
+
+	std::cout << "Message header:\n";
+	
+	for (const char &c : header_stream.span())
+	{
+		printf("%02x ", static_cast<uint8_t>(c) & 0xFF);
+	}
+	
+	bytes_count = send(sock, header_stream.span().data(), static_cast<int>(header_stream.span().size()), 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't send message header: " << WSAGetLastError() << '\n';
+		
+		freeaddrinfo(res);
+		closesocket(sock);
+		WSACleanup();
+		
+		return 1;
+	}
+	
+	std::cout << "\nSent message header.\n";
 
 	freeaddrinfo(res);
 	closesocket(sock);
 	WSACleanup();
 	
 	return 0;
+}
+
+int discard(const SOCKET &sock, uint64_t length, int flags)
+{
+	int bytes_count;
+	char tmp[4096];
+	
+	for (; length > 0; length = std::max(0ull, length - 4096))
+	{
+		bytes_count = recv(sock, tmp, 4096, flags);
+	
+		if (bytes_count == SOCKET_ERROR)
+		{
+			std::cerr << "Couldn't receive: " << WSAGetLastError() << '\n';
+	
+			return 1;
+		}
+		
+		std::cout << "Received " << bytes_count << " bytes.\n";
+	}
+	
+	return SUCCESS;
 }
 
 // TODO: handle 0 bytes_count aka. disconnected
@@ -672,9 +468,9 @@ int recv_message_header(const SOCKET &sock, message_header &msg_header)
 		return 1;
 	}
 
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
+	std::cout << "Received " << bytes_count << " bytes.\n";
 
-	std::cout << "Recieved start string:\n";
+	std::cout << "Received start string:\n";
 
 	for (const char &c : msg_header.start_string)
 	{
@@ -692,9 +488,9 @@ int recv_message_header(const SOCKET &sock, message_header &msg_header)
 		return 1;
 	}
 
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
+	std::cout << "Received " << bytes_count << " bytes.\n";
 
-	std::cout << "Recieved command name:\n";
+	std::cout << "Received command name:\n";
 
 	for (const char &c : msg_header.command_name)
 	{
@@ -712,9 +508,9 @@ int recv_message_header(const SOCKET &sock, message_header &msg_header)
 		return 1;
 	}
 
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
+	std::cout << "Received " << bytes_count << " bytes.\n";
 
-	std::cout << "Recieved payload size:\n";
+	std::cout << "Received payload size:\n";
 
 	for (uint8_t i = 0; i < 4; i++)
 	{
@@ -732,9 +528,9 @@ int recv_message_header(const SOCKET &sock, message_header &msg_header)
 		return 1;
 	}
 
-	std::cout << "Recieved " << bytes_count << " bytes.\n";
+	std::cout << "Received " << bytes_count << " bytes.\n";
 
-	std::cout << "Recieved checksum:\n";
+	std::cout << "Received checksum:\n";
 
 	for (const char &c : msg_header.checksum)
 	{
@@ -743,5 +539,309 @@ int recv_message_header(const SOCKET &sock, message_header &msg_header)
 
 	std::cout << '\n';
 
+	return SUCCESS;
+}
+
+int recv_message_version(const SOCKET &sock, const message_header &msg_header, message_version &msg_version)
+{
+	int bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.version), 4, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive version: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received version:\n";
+
+	for (uint8_t i = 0; i < 4; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.version) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+
+	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.services), 8, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive services: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received services:\n";
+
+	for (uint8_t i = 0; i < 8; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.services) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+
+	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.timestamp), 8, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive timestamp: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received timestamp:\n";
+
+	for (uint8_t i = 0; i < 8; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.timestamp) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+
+	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.addr_recv_services), 8, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive receiver services: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received receiver services:\n";
+
+	for (uint8_t i = 0; i < 8; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.addr_recv_services) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+
+	bytes_count = recv(sock, msg_version.addr_recv_ip, 16, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive receiver ip: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received receiver ip:\n";
+
+	for (const char &c : msg_version.addr_recv_ip)
+	{
+		printf("%02x ", static_cast<uint8_t>(c) & 0xFF);
+	}
+
+	std::cout << '\n';
+
+	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.addr_recv_port), 2, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive receiver port: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received receiver port:\n";
+
+	for (uint8_t i = 0; i < 2; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.addr_recv_port) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+
+	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.addr_trans_services), 8, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive transmitter services: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received transmitter services:\n";
+
+	for (uint8_t i = 0; i < 8; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.addr_trans_services) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+
+	bytes_count = recv(sock, msg_version.addr_trans_ip, 16, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive transmitter ip: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received transmitter ip:\n";
+
+	for (const char &c : msg_version.addr_trans_ip)
+	{
+		printf("%02x ", static_cast<uint8_t>(c) & 0xFF);
+	}
+
+	std::cout << '\n';
+
+	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.addr_trans_port), 2, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive transmitter port: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received transmitter port:\n";
+
+	for (uint8_t i = 0; i < 2; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.addr_trans_port) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+
+	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.nonce), 8, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive nonce: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received nonce:\n";
+
+	for (uint8_t i = 0; i < 8; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.nonce) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	bytes_count = recv(sock, reinterpret_cast<char*>(*msg_version.user_agent_bytes), 1, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive user agent bytes: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+	
+	std::cout << "Received " << bytes_count << " bytes.\n";
+	
+	if (msg_version.user_agent_bytes.size() > 1)
+	{
+		bytes_count = recv(sock, reinterpret_cast<char *>((*msg_version.user_agent_bytes) + 1), msg_version.user_agent_bytes.size() - 1, 0);
+		
+		if (bytes_count == SOCKET_ERROR)
+		{
+			std::cerr << "Couldn't receive user agent bytes: " << WSAGetLastError() << '\n';
+			
+			return 1;
+		}
+		
+		std::cout << "Received " << bytes_count << " bytes.\n";
+	}
+	
+	std::cout << "Received user agent bytes:\n";
+	
+	for (uint8_t i = 0; i < msg_version.user_agent_bytes.size(); i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(*msg_version.user_agent_bytes) + i) & 0xFF);
+	}
+	
+	std::cout << '\n';
+	
+	msg_version.user_agent = new char[msg_version.user_agent_bytes.data()];
+
+	bytes_count = recv(sock, msg_version.user_agent, (int32_t)msg_version.user_agent_bytes.data(), 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive user agent: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received user agent:\n";
+
+	for (uint64_t i = 0; i < msg_version.user_agent_bytes.data(); i++)
+	{
+		printf("%02x ", static_cast<uint8_t>(msg_version.user_agent[i]) & 0xFF);
+	}
+
+	std::cout << '\n';
+
+	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.start_height), 4, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive start height: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received start height:\n";
+
+	for (uint8_t i = 0; i < 4; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.start_height) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	if (msg_header.payload_size - (MSG_VERSION_MIN_SIZE + msg_version.user_agent_bytes.size() - 1) > 0)
+	{
+		bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.relay), 1, 0);
+	
+		if (bytes_count == SOCKET_ERROR)
+		{
+			std::cerr << "Couldn't receive relay: " << WSAGetLastError() << '\n';
+	
+			return 1;
+		}
+	
+		std::cout << "Received " << bytes_count << " bytes.\n";
+	
+		std::cout << "Received relay:\n";
+	
+		for (uint8_t i = 0; i < 1; i++)
+		{
+			printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.relay) + i) & 0xFF);
+		}
+	
+		std::cout << '\n';
+	}
+	
 	return SUCCESS;
 }

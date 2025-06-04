@@ -1,16 +1,22 @@
 #ifndef MINER_COMPACT_SIZE_UINT_H
 #define MINER_COMPACT_SIZE_UINT_H
 
+#include <bitset>
 #include <cstdint>
+#include <stdexcept>
+#include <stdlib.h>
 
 struct compact_size_uint
 {
 	public:
-		uint8_t  size();
-		uint64_t data();
+		uint8_t  size() const;
+		uint64_t data() const;
 		
-		compact_size_uint(uint64_t value);
+		compact_size_uint(uint64_t value = 0);
 		~compact_size_uint();
+		
+		uint8_t* operator*() { return _size_ptr; }
+	    const uint8_t* operator*() const { return _size_ptr; }
 		
 	private:
 		uint8_t  *_size_ptr;

@@ -3,7 +3,9 @@
 
 #include <cstdint>
 
-struct version_message
+#include "datatypes/compact_size_uint.h"
+
+struct message_version
 {
 	int32_t version;
 	uint64_t services;
@@ -23,7 +25,7 @@ struct version_message
 	char             *user_agent;
 	
 	int32_t start_height;
-	bool relay;
+	bool    relay = true;
 };
 
 #endif //MINER_MESSAGE_VERSION_H
