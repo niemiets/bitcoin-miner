@@ -17,14 +17,19 @@ uint8_t compact_size_uint::size() const
 
 uint64_t compact_size_uint::data() const
 {
+	for (uint8_t i = 0; i < size() - 1; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(_data_ptr) + i) & 0xFF);
+	}
+	
 	switch (size())
 	{
 		case sizeof(uint8_t):
-			return *_size_ptr;
+			return static_cast<uint64_t>(*reinterpret_cast<uint8_t*>(_data_ptr));
 		case sizeof(uint8_t) + sizeof(uint16_t):
-			return *_data_ptr & 0xFFFF;
+			return static_cast<uint64_t>(*reinterpret_cast<uint16_t*>(_data_ptr));
 		case sizeof(uint8_t) + sizeof(uint32_t):
-			return *_data_ptr & 0xFFFFFFFF;
+			return static_cast<uint64_t>(*reinterpret_cast<uint32_t*>(_data_ptr));
 		case sizeof(uint8_t) + sizeof(uint64_t):
 			return *_data_ptr;
 		default:
@@ -32,46 +37,52 @@ uint64_t compact_size_uint::data() const
 	}
 }
 
+compact_size_uint::compact_size_uint()
+{
+	_size_ptr = nullptr;
+	_data_ptr = nullptr;
+}
+
 compact_size_uint::compact_size_uint(uint64_t value)
 {
 	if (value <= 0xFC)
 	{
 		_size_ptr = new uint8_t(value);
-		_data_ptr = (uint64_t*)_size_ptr;
+		_data_ptr = reinterpret_cast<uint64_t*>(_size_ptr);
 	}
 	else if (value <= 0xFFFF)
 	{
-		const auto ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint16_t));
-		
-		_size_ptr = ptr;
-		_data_ptr = (uint64_t*)(ptr + sizeof(uint8_t));
+		_size_ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint16_t));
+		_data_ptr = reinterpret_cast<uint64_t*>(_size_ptr + sizeof(uint8_t));
 		
 		*_size_ptr = 0xFD;
-		*_data_ptr = static_cast<uint16_t>(value);
+		*_data_ptr = value;
 	}
 	else if (value <= 0xFFFFFFFF)
 	{
-		const auto ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint32_t));
-		
-		_size_ptr = ptr;
-		_data_ptr = (uint64_t*)(ptr + sizeof(uint8_t));
+		_size_ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint32_t));
+		_data_ptr = reinterpret_cast<uint64_t*>(_size_ptr + sizeof(uint8_t));
 		
 		*_size_ptr = 0xFE;
-		*_data_ptr = static_cast<uint32_t>(value);
+		*_data_ptr = value;
 	}
 	else if (value <= 0xFFFFFFFFFFFFFFFF)
 	{
-		const auto ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint64_t));
-		
-		_size_ptr = ptr;
-		_data_ptr = (uint64_t*)(ptr + sizeof(uint8_t));
+		_size_ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint64_t));
+		_data_ptr = reinterpret_cast<uint64_t*>(_size_ptr + sizeof(uint8_t));
 		
 		*_size_ptr = 0xFF;
-		*_data_ptr = static_cast<uint64_t>(value);
+		*_data_ptr = value;
 	}
 }
 
 compact_size_uint::~compact_size_uint()
 {
-	free(_size_ptr);
+	if (_size_ptr != nullptr)
+		free(_size_ptr);
+}
+
+compact_size_uint::set_size(uint8_t value)
+{
+	
 }

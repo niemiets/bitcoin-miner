@@ -7,9 +7,9 @@
 
 struct message_version
 {
-	int32_t version;
+	int32_t  version;
 	uint64_t services;
-	int64_t timestamp;
+	int64_t  timestamp;
 	
 	uint64_t addr_recv_services;
 	char     addr_recv_ip[16];
