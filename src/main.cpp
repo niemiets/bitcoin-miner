@@ -40,6 +40,7 @@ int discard(const SOCKET &sock, uint64_t length, int flags = 0);
 int recv_message_header(const SOCKET &sock, message_header &msg_header);
 int recv_message_inv(const SOCKET &sock, message_inv &msg_inv);
 int recv_message_version(const SOCKET &sock, const message_header &msg_header, message_version &msg_version);
+int recv_compact_size_uint(const SOCKET &sock, compact_size_uint &cmpct);
 
 int main()
 {
@@ -738,229 +739,213 @@ int recv_message_inv(const SOCKET &sock, message_inv &msg_inv)
 
 int recv_message_version(const SOCKET &sock, const message_header &msg_header, message_version &msg_version)
 {
-	int bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.version), 4, 0);
-
+	int bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.version), 4, 0);
+	
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't receive version: " << WSAGetLastError() << '\n';
-
+		
 		return 1;
 	}
-
+	
 	std::cout << "Received " << bytes_count << " bytes.\n";
-
+	
 	std::cout << "Received version:\n";
-
+	
 	for (uint8_t i = 0; i < 4; i++)
 	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.version) + i) & 0xFF);
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(&msg_version.version) + i) & 0xFF);
 	}
-
+	
 	std::cout << '\n';
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.services), 8, 0);
-
+	
+	bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.services), 8, 0);
+	
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't receive services: " << WSAGetLastError() << '\n';
-
+		
 		return 1;
 	}
-
+	
 	std::cout << "Received " << bytes_count << " bytes.\n";
-
+	
 	std::cout << "Received services:\n";
-
+	
 	for (uint8_t i = 0; i < 8; i++)
 	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.services) + i) & 0xFF);
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(&msg_version.services) + i) & 0xFF);
 	}
-
+	
 	std::cout << '\n';
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.timestamp), 8, 0);
-
+	
+	bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.timestamp), 8, 0);
+	
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't receive timestamp: " << WSAGetLastError() << '\n';
-
+		
 		return 1;
 	}
-
+	
 	std::cout << "Received " << bytes_count << " bytes.\n";
-
+	
 	std::cout << "Received timestamp:\n";
-
+	
 	for (uint8_t i = 0; i < 8; i++)
 	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.timestamp) + i) & 0xFF);
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(&msg_version.timestamp) + i) & 0xFF);
 	}
-
+	
 	std::cout << '\n';
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.addr_recv_services), 8, 0);
-
+	
+	bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.addr_recv_services), 8, 0);
+	
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't receive receiver services: " << WSAGetLastError() << '\n';
-
+		
 		return 1;
 	}
-
+	
 	std::cout << "Received " << bytes_count << " bytes.\n";
-
+	
 	std::cout << "Received receiver services:\n";
-
+	
 	for (uint8_t i = 0; i < 8; i++)
 	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.addr_recv_services) + i) & 0xFF);
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(&msg_version.addr_recv_services) + i) & 0xFF);
 	}
-
+	
 	std::cout << '\n';
-
+	
 	bytes_count = recv(sock, msg_version.addr_recv_ip, 16, 0);
-
+	
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't receive receiver ip: " << WSAGetLastError() << '\n';
-
+		
 		return 1;
 	}
-
+	
 	std::cout << "Received " << bytes_count << " bytes.\n";
-
+	
 	std::cout << "Received receiver ip:\n";
-
+	
 	for (const char &c : msg_version.addr_recv_ip)
 	{
 		printf("%02x ", static_cast<uint8_t>(c) & 0xFF);
 	}
-
+	
 	std::cout << '\n';
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.addr_recv_port), 2, 0);
-
+	
+	bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.addr_recv_port), 2, 0);
+	
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't receive receiver port: " << WSAGetLastError() << '\n';
-
+		
 		return 1;
 	}
-
+	
 	std::cout << "Received " << bytes_count << " bytes.\n";
-
+	
 	std::cout << "Received receiver port:\n";
-
+	
 	for (uint8_t i = 0; i < 2; i++)
 	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.addr_recv_port) + i) & 0xFF);
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(&msg_version.addr_recv_port) + i) & 0xFF);
 	}
-
+	
 	std::cout << '\n';
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.addr_trans_services), 8, 0);
-
+	
+	bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.addr_trans_services), 8, 0);
+	
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't receive transmitter services: " << WSAGetLastError() << '\n';
-
+		
 		return 1;
 	}
-
+	
 	std::cout << "Received " << bytes_count << " bytes.\n";
-
+	
 	std::cout << "Received transmitter services:\n";
-
+	
 	for (uint8_t i = 0; i < 8; i++)
 	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.addr_trans_services) + i) & 0xFF);
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(&msg_version.addr_trans_services) + i) & 0xFF);
 	}
-
+	
 	std::cout << '\n';
-
+	
 	bytes_count = recv(sock, msg_version.addr_trans_ip, 16, 0);
-
+	
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't receive transmitter ip: " << WSAGetLastError() << '\n';
-
+		
 		return 1;
 	}
-
+	
 	std::cout << "Received " << bytes_count << " bytes.\n";
-
+	
 	std::cout << "Received transmitter ip:\n";
-
+	
 	for (const char &c : msg_version.addr_trans_ip)
 	{
 		printf("%02x ", static_cast<uint8_t>(c) & 0xFF);
 	}
-
+	
 	std::cout << '\n';
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.addr_trans_port), 2, 0);
-
+	
+	bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.addr_trans_port), 2, 0);
+	
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't receive transmitter port: " << WSAGetLastError() << '\n';
-
+		
 		return 1;
 	}
-
+	
 	std::cout << "Received " << bytes_count << " bytes.\n";
-
+	
 	std::cout << "Received transmitter port:\n";
-
+	
 	for (uint8_t i = 0; i < 2; i++)
 	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.addr_trans_port) + i) & 0xFF);
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(&msg_version.addr_trans_port) + i) & 0xFF);
 	}
-
+	
 	std::cout << '\n';
-
-	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.nonce), 8, 0);
-
+	
+	bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.nonce), 8, 0);
+	
 	if (bytes_count == SOCKET_ERROR)
 	{
 		std::cerr << "Couldn't receive nonce: " << WSAGetLastError() << '\n';
-
+		
 		return 1;
 	}
-
+	
 	std::cout << "Received " << bytes_count << " bytes.\n";
-
+	
 	std::cout << "Received nonce:\n";
-
+	
 	for (uint8_t i = 0; i < 8; i++)
 	{
-		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_version.nonce) + i) & 0xFF);
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(&msg_version.nonce) + i) & 0xFF);
 	}
-
+	
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char*>(*msg_version.user_agent_bytes), 1, 0);
-
-	if (bytes_count == SOCKET_ERROR)
+	int err_code = recv_compact_size_uint(sock, msg_version.user_agent_bytes);
+	
+	if (err_code != SUCCESS)
 	{
-		std::cerr << "Couldn't receive user agent bytes: " << WSAGetLastError() << '\n';
-
+		std::cerr << "Couldn't receive user agent bytes.\n";
+		
 		return 1;
-	}
-	
-	std::cout << "Received " << bytes_count << " bytes.\n";
-	
-	if (msg_version.user_agent_bytes.size() > 1)
-	{
-		bytes_count = recv(sock, reinterpret_cast<char *>((*msg_version.user_agent_bytes) + 1), msg_version.user_agent_bytes.size() - 1, 0);
-		
-		if (bytes_count == SOCKET_ERROR)
-		{
-			std::cerr << "Couldn't receive user agent bytes: " << WSAGetLastError() << '\n';
-			
-			return 1;
-		}
-		
-		std::cout << "Received " << bytes_count << " bytes.\n";
 	}
 	
 	std::cout << "Received user agent bytes:\n";
@@ -1086,8 +1071,24 @@ int recv_compact_size_uint(const SOCKET &sock, compact_size_uint &cmpct)
 
 		std::cout << "Received " << bytes_count << " bytes.\n";
 	}
-
-	cmpct = compact_size_uint(value);
+	
+	switch (size)
+	{
+		case 8:
+			cmpct = compact_size_uint(value);
+			break;
+		case 4:
+			cmpct = compact_size_uint(static_cast<uint64_t>(*(reinterpret_cast<uint32_t*>(&value))));
+			break;
+		case 2:
+			cmpct = compact_size_uint(static_cast<uint64_t>(*(reinterpret_cast<uint16_t*>(&value))));
+			break;
+		case 0:
+			cmpct = compact_size_uint(static_cast<uint64_t>(*(reinterpret_cast<uint8_t*>(&value))));
+			break;
+		default:
+			assert(false);
+	}
 
 	std::cout << "Received compact size uint:\n";
 
