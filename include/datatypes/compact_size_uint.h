@@ -5,13 +5,14 @@
 #include <cstdint>
 #include <stdexcept>
 #include <stdlib.h>
+#include <winsock2.h>
 
 struct compact_size_uint
 {
 	public:
 		uint8_t  size() const;
 		uint64_t data() const;
-		
+
 		compact_size_uint();
 		compact_size_uint(uint64_t value);
 		~compact_size_uint();

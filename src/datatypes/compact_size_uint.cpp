@@ -17,11 +17,6 @@ uint8_t compact_size_uint::size() const
 
 uint64_t compact_size_uint::data() const
 {
-	for (uint8_t i = 0; i < size() - 1; i++)
-	{
-		printf("%02x ", *(reinterpret_cast<uint8_t *>(_data_ptr) + i) & 0xFF);
-	}
-	
 	switch (size())
 	{
 		case sizeof(uint8_t):
@@ -80,9 +75,4 @@ compact_size_uint::~compact_size_uint()
 {
 	if (_size_ptr != nullptr)
 		free(_size_ptr);
-}
-
-compact_size_uint::set_size(uint8_t value)
-{
-	
 }

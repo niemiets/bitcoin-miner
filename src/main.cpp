@@ -1039,3 +1039,64 @@ int recv_message_version(const SOCKET &sock, const message_header &msg_header, m
 	
 	return SUCCESS;
 }
+
+// TODO: replace with this func
+int recv_compact_size_uint(const SOCKET &sock, compact_size_uint &cmpct)
+{
+	uint8_t size;
+
+	uint64_t value;
+
+	int bytes_count = recv(sock, reinterpret_cast<char*>(&value), 1, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive compact size uint: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	switch (*(reinterpret_cast<uint8_t*>(&value)))
+	{
+		case 0xFF:
+			size = 8;
+			break;
+		case 0xFE:
+			size = 4;
+			break;
+		case 0xFD:
+			size = 2;
+			break;
+		default:
+			size = 0;
+	}
+
+	if (size != 0)
+	{
+		bytes_count = recv(sock, reinterpret_cast<char*>(&value), size, 0);
+
+		if (bytes_count == SOCKET_ERROR)
+		{
+			std::cerr << "Couldn't receive compact size uint: " << WSAGetLastError() << '\n';
+
+			return 1;
+		}
+
+		std::cout << "Received " << bytes_count << " bytes.\n";
+	}
+
+	cmpct = compact_size_uint(value);
+
+	std::cout << "Received compact size uint:\n";
+
+	for (uint8_t i = 0; i < cmpct.size(); i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(*cmpct) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+
+	return SUCCESS;
+}
