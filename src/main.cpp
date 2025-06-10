@@ -336,7 +336,7 @@ int main()
 				.write(reinterpret_cast<const char *>(*hash_count), hash_count.size())
 				.write(reinterpret_cast<const char *>(stop_hash), 32);
 				
-				constexpr char *command_name = "getblocks\0\0\0";
+				constexpr char *command_name = "getheaders\0\0";
 				
 				const uint32_t payload_size = payload_stream.span().size();
 				
@@ -651,34 +651,18 @@ int recv_message_header(const SOCKET &sock, message_header &msg_header)
 
 int recv_message_inv(const SOCKET &sock, message_inv &msg_inv)
 {
-	int bytes_count = recv(sock, reinterpret_cast<char*>(*msg_inv.count), 1, 0);
-
-	if (bytes_count == SOCKET_ERROR)
+	int err_code = recv_compact_size_uint(sock, msg_inv.count);
+	
+	if (err_code != SUCCESS)
 	{
-		std::cerr << "Couldn't receive count: " << WSAGetLastError() << '\n';
-
+		std::cerr << "Couldn't receive count.\n";
+		
 		return 1;
-	}
-	
-	std::cout << "Received " << bytes_count << " bytes.\n";
-	
-	if (msg_inv.count.size() > 1)
-	{
-		bytes_count = recv(sock, reinterpret_cast<char *>((*msg_inv.count) + 1), msg_inv.count.size() - 1, 0);
-		
-		if (bytes_count == SOCKET_ERROR)
-		{
-			std::cerr << "Couldn't receive count: " << WSAGetLastError() << '\n';
-			
-			return 1;
-		}
-		
-		std::cout << "Received " << bytes_count << " bytes.\n";
 	}
 	
 	std::cout << "Received count:\n";
 	
-	for (uint8_t i = 0; i < msg_inv.count.size(); i++)
+	for (uint8_t i = 0; i <msg_inv.count.size(); i++)
 	{
 		printf("%02x ", *(reinterpret_cast<uint8_t *>(*msg_inv.count) + i) & 0xFF);
 	}
@@ -689,11 +673,9 @@ int recv_message_inv(const SOCKET &sock, message_inv &msg_inv)
 	
 	std::cout << '\n';
 	
-	throw std::runtime_error("a");
-	
 	for (uint64_t i = 0; i < msg_inv.count.data(); i++)
 	{
-		bytes_count = recv(sock, reinterpret_cast<char*>(&(msg_inv.inventory[i].type)), 4, 0);
+		int bytes_count = recv(sock, reinterpret_cast<char*>(&(msg_inv.inventory[i].type)), 4, 0);
 
 		if (bytes_count == SOCKET_ERROR)
 		{
