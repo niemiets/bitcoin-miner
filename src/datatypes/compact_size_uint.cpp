@@ -47,7 +47,7 @@ compact_size_uint::compact_size_uint(uint64_t value)
 	}
 	else if (value <= 0xFFFF)
 	{
-		_size_ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint16_t));
+		_size_ptr = static_cast<uint8_t*>(malloc(sizeof(uint8_t) + sizeof(uint16_t)));
 		_data_ptr = reinterpret_cast<uint64_t*>(_size_ptr + sizeof(uint8_t));
 		
 		*_size_ptr = 0xFD;
@@ -55,7 +55,7 @@ compact_size_uint::compact_size_uint(uint64_t value)
 	}
 	else if (value <= 0xFFFFFFFF)
 	{
-		_size_ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint32_t));
+		_size_ptr = static_cast<uint8_t*>(malloc(sizeof(uint8_t) + sizeof(uint32_t)));
 		_data_ptr = reinterpret_cast<uint64_t*>(_size_ptr + sizeof(uint8_t));
 		
 		*_size_ptr = 0xFE;
@@ -63,7 +63,7 @@ compact_size_uint::compact_size_uint(uint64_t value)
 	}
 	else if (value <= 0xFFFFFFFFFFFFFFFF)
 	{
-		_size_ptr = (uint8_t*)malloc(sizeof(uint8_t) + sizeof(uint64_t));
+		_size_ptr = static_cast<uint8_t*>(malloc(sizeof(uint8_t) + sizeof(uint64_t)));
 		_data_ptr = reinterpret_cast<uint64_t*>(_size_ptr + sizeof(uint8_t));
 		
 		*_size_ptr = 0xFF;
@@ -75,4 +75,40 @@ compact_size_uint::~compact_size_uint()
 {
 	if (_size_ptr != nullptr)
 		free(_size_ptr);
+}
+
+compact_size_uint& compact_size_uint::operator=(const compact_size_uint &other)
+{
+	if (this == &other)
+		return *this;
+
+	if (this->size() != other.size())
+	{
+		free(_size_ptr);
+
+		_size_ptr = static_cast<uint8_t*>(malloc(other.size()));
+
+		if (other.size() > 1)
+			_data_ptr = reinterpret_cast<uint64_t*>(_size_ptr + 1);
+		else
+			_data_ptr = reinterpret_cast<uint64_t*>(_size_ptr);
+	}
+
+	memcpy(_size_ptr, *other, other.size());
+
+	return *this;
+}
+
+compact_size_uint& compact_size_uint::operator=(compact_size_uint &&other) noexcept
+{
+	if (this == &other)
+		return *this;
+
+	_size_ptr = other._size_ptr;
+	_data_ptr = other._data_ptr;
+
+	other._size_ptr = nullptr;
+	other._data_ptr = nullptr;
+
+	return *this;
 }

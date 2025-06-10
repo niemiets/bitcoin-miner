@@ -16,7 +16,10 @@ struct compact_size_uint
 		compact_size_uint();
 		compact_size_uint(uint64_t value);
 		~compact_size_uint();
-		
+
+		compact_size_uint& operator=(const compact_size_uint &other);
+		compact_size_uint& operator=(compact_size_uint &&other) noexcept;
+
 		uint8_t* operator*() { return _size_ptr; }
 	    const uint8_t* operator*() const { return _size_ptr; }
 		
