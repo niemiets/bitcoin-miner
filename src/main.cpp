@@ -4,7 +4,6 @@
 #include <cstring>
 #include <ctime>
 #include <iostream>
-#include <memory>
 #include <random>
 #include <span>
 #include <spanstream>
@@ -14,8 +13,10 @@
 #include <ws2tcpip.h>
 
 #include "algorithms/crypto.h"
+#include "bitcoin/block_header.h"
 #include "bitcoin/message_header.h"
 #include "bitcoin/network_type.h"
+#include "bitcoin/messages/message_block.h"
 #include "bitcoin/messages/message_inv.h"
 #include "bitcoin/messages/message_version.h"
 #include "datatypes/compact_size_uint.h"
@@ -24,8 +25,11 @@ typedef uint8_t byte;
 
 constexpr uint64_t MAX_UINT64 = 0xFFFFFFFFFFFFFFFF;
 
+constexpr uint32_t BLOCK_SIZE = 4 + 32 + 32 + 4 + 4 + 4;
+
 constexpr uint32_t MAX_SIZE = 0x02000000;
-constexpr uint8_t  MSG_HEADER_SIZE = 4 + 12 + 4 + 4;
+constexpr uint32_t MSG_HEADER_SIZE = 4 + 12 + 4 + 4;
+constexpr uint32_t MSG_BLOCK_MIN_SIZE = 4 + 32 + 32 + 4 + 4 + 4 + 1;
 constexpr uint32_t MSG_VERSION_MIN_SIZE = 4 + 8 + 8 + 8 + 16 + 2 + 8 + 16 + 2 + 8 + 1 + 4;
 constexpr uint32_t MSG_GETHEADERS_MIN_SIZE = 4 + 1 + 32;
 constexpr uint32_t MSG_INV_MIN_SIZE = 1;
@@ -37,10 +41,18 @@ constexpr uint32_t MSG_VERACK_CHECKSUM = std::byteswap(0x5df6e0e2);
 constexpr int SUCCESS = 0;
 
 int discard(const SOCKET &sock, uint64_t length, int flags = 0);
+
+int recv_message_block(const SOCKET &sock, message_block &msg_block);
 int recv_message_header(const SOCKET &sock, message_header &msg_header);
 int recv_message_inv(const SOCKET &sock, message_inv &msg_inv);
 int recv_message_version(const SOCKET &sock, const message_header &msg_header, message_version &msg_version);
 int recv_compact_size_uint(const SOCKET &sock, compact_size_uint &cmpct);
+int recv_raw_transaction(const SOCKET &sock, raw_transaction &transaction);
+int recv_tx_in(const SOCKET &sock, tx_in &tx);
+int recv_tx_out(const SOCKET &sock, tx_out &tx);
+int recv_outpoint(const SOCKET &sock, outpoint &outpoint);
+
+void hash_block_header(const block_header &blk_header, uint32_t *hash);
 
 int main()
 {
@@ -152,7 +164,7 @@ int main()
 		
 		constexpr int32_t start_height = 0;
 		
-		constexpr bool relay = true;
+		constexpr bool relay = false;
 		
 		std::vector<char> payload_buffer(MSG_VERSION_MIN_SIZE - 1 + user_agent_bytes.size() + user_agent_bytes.data() + 1);
 		const std::span payload_span(payload_buffer);
@@ -242,6 +254,17 @@ int main()
 		std::cout << "Sent message payload.\n";
 	}
 	
+	block_header block_latest = {
+		.version = 0x01000000,
+		.previous_block_header_hash = {0x0000000000000000000000000000000000000000000000000000000000000000},
+		.merkle_root_hash = {0x3b, static_cast<char>(0xa3), static_cast<char>(0xed), static_cast<char>(0xfd), 0x7a, 0x7b, 0x12, static_cast<char>(0xb2), 0x7a, static_cast<char>(0xc7), 0x2c, 0x3e, 0x67, 0x76, static_cast<char>(0x8f), 0x61, 0x7f, static_cast<char>(0xc8), 0x1b, static_cast<char>(0xc3), static_cast<char>(0x88), static_cast<char>(0x8a), 0x51, 0x32, 0x3a, static_cast<char>(0x9f), static_cast<char>(0xb8), static_cast<char>(0xaa), 0x4b, 0x1e, 0x5e, 0x4a},
+		.time = 0x29ab5f49,
+		.nbits = 0xffff001d,
+		.nonce = 0x1dac2b7c
+	}; // genesis block (height: 0)
+	
+	message_version msg_version;
+	
 	while (connected)
 	{
 		message_header msg_header{};
@@ -265,8 +288,6 @@ int main()
 		
 		if (memcmp(msg_header.command_name, "version\0\0\0\0", 12) == 0)
 		{
-			message_version msg_version;
-
 			err_code = recv_message_version(sock, msg_header, msg_version);
 		
 			if (err_code != SUCCESS)
@@ -306,8 +327,7 @@ int main()
 					printf("%02x ", static_cast<uint8_t>(c) & 0xFF);
 				}
 				
-				int
-				bytes_count = send(sock, header_stream.span().data(), static_cast<int>(header_stream.span().size()), 0);
+				int bytes_count = send(sock, header_stream.span().data(), static_cast<int>(header_stream.span().size()), 0);
 				
 				if (bytes_count == SOCKET_ERROR)
 				{
@@ -324,8 +344,12 @@ int main()
 			}
 			
 			{
-				compact_size_uint hash_count(0);
-				char *stop_hash = (char *)calloc(32, sizeof(char));
+				char hash[32];
+				
+				hash_block_header(block_latest, reinterpret_cast<uint32_t *>(hash));
+				
+				compact_size_uint hash_count(1);
+				char *stop_hash = reinterpret_cast<char*>(calloc(32, sizeof(char)));
 				
 				std::vector<char> payload_buffer(MSG_GETHEADERS_MIN_SIZE - 1 + hash_count.size() + (hash_count.data() * sizeof(inventory)));
 				const std::span payload_span(payload_buffer);
@@ -334,9 +358,10 @@ int main()
 				payload_stream
 				.write(reinterpret_cast<const char *>(&version), 4)
 				.write(reinterpret_cast<const char *>(*hash_count), hash_count.size())
+				.write(reinterpret_cast<const char *>(hash), 32)
 				.write(reinterpret_cast<const char *>(stop_hash), 32);
 				
-				constexpr char *command_name = "getheaders\0\0";
+				constexpr char *command_name = "getblocks\0\0\0";
 				
 				const uint32_t payload_size = payload_stream.span().size();
 				
@@ -386,8 +411,7 @@ int main()
 				
 				std::cout << "Sent message header.\n";
 				
-				bytes_count =
-				send(sock, payload_stream.span().data(), static_cast<int>(payload_stream.span().size()), 0);
+				bytes_count = send(sock, payload_stream.span().data(), static_cast<int>(payload_stream.span().size()), 0);
 				
 				if (bytes_count == SOCKET_ERROR)
 				{
@@ -422,88 +446,107 @@ int main()
 	
 			std::cout << "Received message inv.\n";
 			
-			std::vector<char> payload_buffer(MSG_INV_MIN_SIZE - 1 + msg_inv.count.size() + (msg_inv.count.data() * sizeof(inventory)));
-			const std::span payload_span(payload_buffer);
-			std::spanstream payload_stream(payload_span, std::ios::binary | std::ios::in | std::ios::out);
-			
-			payload_stream
-			.write(reinterpret_cast<const char*>(*(msg_inv.count)), msg_inv.count.size());
-			
-			std::cout << msg_inv.count.data() << '\n';
-			
-			for (uint64_t i = 0; i < msg_inv.count.data(); i++)
 			{
+				std::vector<char> payload_buffer(MSG_INV_MIN_SIZE - 1 + msg_inv.count.size() + (msg_inv.count.data() * sizeof(inventory)));
+				const std::span payload_span(payload_buffer);
+				std::spanstream payload_stream(payload_span, std::ios::binary | std::ios::in | std::ios::out);
+				
 				payload_stream
-				.write(reinterpret_cast<const char*>(&(msg_inv.inventory[i].type)), 4)
-				.write(reinterpret_cast<const char*>(msg_inv.inventory[i].hash), 32);
+				.write(reinterpret_cast<const char *>(*(msg_inv.count)), msg_inv.count.size());
+				
+				for (uint64_t i = 0; i < msg_inv.count.data(); i++)
+				{
+					payload_stream
+					.write(reinterpret_cast<const char *>(&(msg_inv.inventory[i].type)), 4)
+					.write(reinterpret_cast<const char *>(msg_inv.inventory[i].hash), 32);
+				}
+				
+				constexpr char *command_name = "getdata\0\0\0\0\0";
+				
+				const uint32_t payload_size = payload_stream.span().size();
+				
+				char checksum[32];
+				
+				sha256(reinterpret_cast<const byte *>(payload_stream.span().data()), payload_stream.span().size() * 8, reinterpret_cast<uint32_t *>(checksum));
+				sha256(reinterpret_cast<const byte *>(checksum), 256, reinterpret_cast<uint32_t *>(checksum));
+				
+				std::vector<char> header_buffer(MSG_HEADER_SIZE);
+				const std::span header_span(header_buffer);
+				std::spanstream header_stream(header_span, std::ios::binary | std::ios::in | std::ios::out);
+				
+				header_stream
+				.write(reinterpret_cast<const char *>(start_string), 4)
+				.write(reinterpret_cast<const char *>(command_name), 12)
+				.write(reinterpret_cast<const char *>(&payload_size), 4)
+				.write(reinterpret_cast<const char *>(&checksum), 4);
+				
+				std::cout << "Message header:\n";
+				
+				for (const char &c : header_stream.span())
+				{
+					printf("%02x ", static_cast<uint8_t>(c) & 0xFF);
+				}
+				
+				std::cout << "\nMessage payload:\n";
+				
+				for (const char &c : payload_stream.span())
+				{
+					printf("%02x ", static_cast<uint8_t>(c) & 0xFF);
+				}
+				
+				std::cout << '\n';
+				
+				int bytes_count = send(sock, header_stream.span().data(), static_cast<int>(header_stream.span().size()), 0);
+				
+				if (bytes_count == SOCKET_ERROR)
+				{
+					std::cerr << "Couldn't send message header: " << WSAGetLastError() << '\n';
+					
+					freeaddrinfo(res);
+					closesocket(sock);
+					WSACleanup();
+					
+					return 1;
+				}
+				
+				std::cout << "Sent message header.\n";
+				
+				bytes_count = send(sock, payload_stream.span().data(), static_cast<int>(payload_stream.span().size()), 0);
+				
+				if (bytes_count == SOCKET_ERROR)
+				{
+					std::cerr << "Couldn't send message payload: " << WSAGetLastError() << '\n';
+					
+					freeaddrinfo(res);
+					closesocket(sock);
+					WSACleanup();
+					
+					return 1;
+				}
+				
+				std::cout << "Sent message payload.\n";
 			}
+		}
+		else if (memcmp(msg_header.command_name, "block\0\0\0\0\0\0\0", 12) == 0)
+		{
+			message_block msg_block;
 			
-			// TODO: rest
+			err_code = recv_message_block(sock, msg_block);
 			
-			constexpr char *command_name = "getdata\0\0\0\0\0";
-		
-			const uint32_t payload_size = payload_stream.span().size();
-			
-			char checksum[32];
-		
-			sha256(reinterpret_cast<const byte*>(payload_stream.span().data()), payload_stream.span().size() * 8, reinterpret_cast<uint32_t*>(checksum));
-			sha256(reinterpret_cast<const byte*>(checksum), 256, reinterpret_cast<uint32_t*>(checksum));
-		
-			std::vector<char> header_buffer(MSG_HEADER_SIZE);
-			const std::span header_span(header_buffer);
-			std::spanstream header_stream(header_span, std::ios::binary | std::ios::in | std::ios::out);
-			
-			header_stream
-			.write(reinterpret_cast<const char*>(start_string), 4)
-			.write(reinterpret_cast<const char*>(command_name), 12)
-			.write(reinterpret_cast<const char*>(&payload_size), 4)
-			.write(reinterpret_cast<const char*>(&checksum), 4);
-			
-			std::cout << "Message header:\n";
-		
-			for (const char &c : header_stream.span())
+			if (err_code != SUCCESS)
 			{
-				printf("%02x ", static_cast<uint8_t>(c) & 0xFF);
-			}
-		
-			std::cout << "\nMessage payload:\n";
-		
-			for (const char &c : payload_stream.span())
-			{
-				printf("%02x ", static_cast<uint8_t>(c) & 0xFF);
-			}
-		
-			std::cout << '\n';
-		
-			int bytes_count = send(sock, header_stream.span().data(), static_cast<int>(header_stream.span().size()), 0);
-		
-			if (bytes_count == SOCKET_ERROR)
-			{
-				std::cerr << "Couldn't send message header: " << WSAGetLastError() << '\n';
-		
+				std::cerr << "Couldn't receive message block.\n";
+	
 				freeaddrinfo(res);
 				closesocket(sock);
 				WSACleanup();
-		
+	
 				return 1;
 			}
-		
-			std::cout << "Sent message header.\n";
-		
-			bytes_count = send(sock, payload_stream.span().data(), static_cast<int>(payload_stream.span().size()), 0);
-		
-			if (bytes_count == SOCKET_ERROR)
-			{
-				std::cerr << "Couldn't send message payload: " << WSAGetLastError() << '\n';
-		
-				freeaddrinfo(res);
-				closesocket(sock);
-				WSACleanup();
-		
-				return 1;
-			}
-		
-			std::cout << "Sent message payload.\n";
+	
+			std::cout << "Received message block.\n";
+			
+			block_latest = msg_block.block_header;
 		}
 		else
 		{
@@ -564,6 +607,165 @@ int discard(const SOCKET &sock, uint64_t length, int flags)
 }
 
 // TODO: handle 0 bytes_count aka. disconnected
+int recv_message_block(const SOCKET &sock, message_block &msg_block)
+{
+	int bytes_count = recv(sock, reinterpret_cast<char*>(&msg_block.block_header.version), 4, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive version: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received version:\n";
+
+	for (uint8_t i = 0; i < 4; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_block.block_header.version) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_block.block_header.previous_block_header_hash), 32, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive previous block header hash: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received previous block header hash:\n";
+
+	for (uint8_t i = 0; i < 32; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_block.block_header.previous_block_header_hash) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_block.block_header.merkle_root_hash), 32, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive merkle root hash: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received merkle root hash:\n";
+
+	for (uint8_t i = 0; i < 32; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_block.block_header.merkle_root_hash) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_block.block_header.time), 4, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive time: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received time:\n";
+
+	for (uint8_t i = 0; i < 4; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_block.block_header.time) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_block.block_header.nbits), 4, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive nbits: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received nbits:\n";
+
+	for (uint8_t i = 0; i < 4; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_block.block_header.nbits) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_block.block_header.nonce), 4, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive nonce: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received nonce:\n";
+
+	for (uint8_t i = 0; i < 4; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&msg_block.block_header.nonce) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	int err_code = recv_compact_size_uint(sock, msg_block.txn_count);
+	
+	if (err_code != SUCCESS)
+	{
+		std::cerr << "Couldn't receive transactions count.\n";
+		
+		return 1;
+	}
+	
+	std::cout << "Received transactions count:\n";
+	
+	for (uint8_t i = 0; i < msg_block.txn_count.size(); i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(*msg_block.txn_count) + i) & 0xFF);
+	}
+	
+	std::cout << '\n';
+	
+	msg_block.txns = new raw_transaction[msg_block.txn_count.data()];
+	
+	for (uint64_t i = 0; i < msg_block.txn_count.data(); i++)
+	{
+		err_code = recv_raw_transaction(sock, msg_block.txns[i]);
+	
+		if (err_code != SUCCESS)
+		{
+			std::cerr << "Couldn't receive transaction.\n";
+			
+			return 1;
+		}
+		
+		std::cout << "Received transaction.\n";
+	}
+	
+	return SUCCESS;
+}
+
 int recv_message_header(const SOCKET &sock, message_header &msg_header)
 {
 	int bytes_count = recv(sock, msg_header.start_string, 4, 0);
@@ -662,7 +864,7 @@ int recv_message_inv(const SOCKET &sock, message_inv &msg_inv)
 	
 	std::cout << "Received count:\n";
 	
-	for (uint8_t i = 0; i <msg_inv.count.size(); i++)
+	for (uint8_t i = 0; i < msg_inv.count.size(); i++)
 	{
 		printf("%02x ", *(reinterpret_cast<uint8_t *>(*msg_inv.count) + i) & 0xFF);
 	}
@@ -1007,7 +1209,6 @@ int recv_message_version(const SOCKET &sock, const message_header &msg_header, m
 	return SUCCESS;
 }
 
-// TODO: replace with this func
 int recv_compact_size_uint(const SOCKET &sock, compact_size_uint &cmpct)
 {
 	uint8_t size;
@@ -1082,4 +1283,321 @@ int recv_compact_size_uint(const SOCKET &sock, compact_size_uint &cmpct)
 	std::cout << '\n';
 
 	return SUCCESS;
+}
+
+int recv_raw_transaction(const SOCKET &sock, raw_transaction &transaction)
+{
+	int bytes_count = recv(sock, reinterpret_cast<char*>(&transaction.version), 4, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive transaction version: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received transaction version:\n";
+
+	for (uint8_t i = 0; i < 4; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&transaction.version) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	int err_code = recv_compact_size_uint(sock, transaction.tx_in_count);
+	
+	if (err_code != SUCCESS)
+	{
+		std::cerr << "Couldn't receive transaction inputs count.\n";
+		
+		return 1;
+	}
+	
+	std::cout << "Received transaction inputs count:\n";
+	
+	for (uint8_t i = 0; i < transaction.tx_in_count.size(); i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(*transaction.tx_in_count) + i) & 0xFF);
+	}
+	
+	std::cout << '\n';
+	
+	transaction.tx_in = new tx_in[transaction.tx_in_count.data()];
+	
+	for (uint64_t i = 0; i < transaction.tx_in_count.data(); i++)
+	{
+		err_code = recv_tx_in(sock, transaction.tx_in[i]);
+	
+		if (err_code != SUCCESS)
+		{
+			std::cerr << "Couldn't receive transaction input.\n";
+			
+			return 1;
+		}
+		
+		std::cout << "Received transaction input.\n";
+	}
+	
+	err_code = recv_compact_size_uint(sock, transaction.tx_out_count);
+	
+	if (err_code != SUCCESS)
+	{
+		std::cerr << "Couldn't receive transaction outputs count.\n";
+		
+		return 1;
+	}
+	
+	std::cout << "Received transaction outputs count:\n";
+	
+	for (uint8_t i = 0; i < transaction.tx_out_count.size(); i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(*transaction.tx_out_count) + i) & 0xFF);
+	}
+	
+	std::cout << '\n';
+	
+	transaction.tx_out = new tx_out[transaction.tx_out_count.data()];
+	
+	for (uint64_t i = 0; i < transaction.tx_out_count.data(); i++)
+	{
+		err_code = recv_tx_out(sock, transaction.tx_out[i]);
+	
+		if (err_code != SUCCESS)
+		{
+			std::cerr << "Couldn't receive transaction output.\n";
+			
+			return 1;
+		}
+		
+		std::cout << "Received transaction output.\n";
+	}
+	
+	bytes_count = recv(sock, reinterpret_cast<char*>(transaction.lock_time), 4, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive lock time: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received lock time:\n";
+
+	for (uint8_t i = 0; i < 4; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&transaction.lock_time) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	return SUCCESS;
+}
+
+int recv_tx_in(const SOCKET &sock, tx_in &tx)
+{
+	int err_code = recv_outpoint(sock, tx.previous_output);
+	
+	if (err_code != SUCCESS)
+	{
+		std::cerr << "Couldn't receive previous output.\n";
+		
+		return 1;
+	}
+	
+	std::cout << "Received previous output.\n";
+	
+	err_code = recv_compact_size_uint(sock, tx.script_bytes);
+	
+	if (err_code != SUCCESS)
+	{
+		std::cerr << "Couldn't receive script bytes.\n";
+		
+		return 1;
+	}
+	
+	std::cout << "Received script bytes:\n";
+	
+	for (uint8_t i = 0; i < tx.script_bytes.size(); i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(*tx.script_bytes) + i) & 0xFF);
+	}
+	
+	std::cout << '\n';
+	
+	tx.signature_script = new char[tx.script_bytes.data()];
+	
+	int bytes_count = recv(sock, reinterpret_cast<char*>(tx.signature_script), static_cast<int>(tx.script_bytes.data()), 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive signature script: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received signature script:\n";
+
+	for (uint64_t i = 0; i < tx.script_bytes.data(); i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&tx.signature_script) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	bytes_count = recv(sock, reinterpret_cast<char*>(tx.sequence), 4, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive sequence: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received sequence:\n";
+
+	for (uint8_t i = 0; i < 4; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&tx.sequence) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	return SUCCESS;
+}
+
+int recv_tx_out(const SOCKET &sock, tx_out &tx)
+{
+	int bytes_count = recv(sock, reinterpret_cast<char*>(tx.value), 8, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive value: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received value:\n";
+
+	for (uint8_t i = 0; i < 4; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&tx.value) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	int err_code = recv_compact_size_uint(sock, tx.pk_script_bytes);
+	
+	if (err_code != SUCCESS)
+	{
+		std::cerr << "Couldn't receive pubkey script bytes.\n";
+		
+		return 1;
+	}
+	
+	std::cout << "Received pubkey script bytes:\n";
+	
+	for (uint8_t i = 0; i < tx.pk_script_bytes.size(); i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t *>(*tx.pk_script_bytes) + i) & 0xFF);
+	}
+	
+	std::cout << '\n';
+	
+	tx.pk_script = new char[tx.pk_script_bytes.data()];
+	
+	bytes_count = recv(sock, reinterpret_cast<char*>(tx.pk_script), static_cast<int>(tx.pk_script_bytes.data()), 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive pubkey script: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received pubkey script:\n";
+
+	for (uint64_t i = 0; i < tx.pk_script_bytes.data(); i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&tx.pk_script) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	return SUCCESS;
+}
+
+int recv_outpoint(const SOCKET &sock, outpoint &outpoint)
+{
+	int bytes_count = recv(sock, reinterpret_cast<char*>(outpoint.hash), 32, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive outpoint hash: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received outpoint hash:\n";
+
+	for (uint8_t i = 0; i < 32; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&outpoint.hash) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	bytes_count = recv(sock, reinterpret_cast<char*>(outpoint.index), 4, 0);
+
+	if (bytes_count == SOCKET_ERROR)
+	{
+		std::cerr << "Couldn't receive outpoint index: " << WSAGetLastError() << '\n';
+
+		return 1;
+	}
+
+	std::cout << "Received " << bytes_count << " bytes.\n";
+
+	std::cout << "Received outpoint index:\n";
+
+	for (uint8_t i = 0; i < 4; i++)
+	{
+		printf("%02x ", *(reinterpret_cast<uint8_t*>(&outpoint.index) + i) & 0xFF);
+	}
+
+	std::cout << '\n';
+	
+	return SUCCESS;
+}
+
+void hash_block_header(const block_header &blk_header, uint32_t *hash)
+{
+	std::vector<char> block_header_buffer(BLOCK_SIZE);
+	const std::span block_header_span(block_header_buffer);
+	std::spanstream block_header_stream(block_header_span, std::ios::binary | std::ios::in | std::ios::out);
+	
+	block_header_stream
+	.write(reinterpret_cast<const char *>(&blk_header.version), 4)
+	.write(reinterpret_cast<const char *>(&blk_header.previous_block_header_hash), 32)
+	.write(reinterpret_cast<const char *>(&blk_header.merkle_root_hash), 32)
+	.write(reinterpret_cast<const char *>(&blk_header.time), 4)
+	.write(reinterpret_cast<const char *>(&blk_header.nbits), 4)
+	.write(reinterpret_cast<const char *>(&blk_header.nonce), 4);
+	
+	sha256(reinterpret_cast<const uint8_t *>(block_header_stream.span().data()), block_header_stream.span().size() * 8, reinterpret_cast<uint32_t *>(hash));
+	sha256(reinterpret_cast<const uint8_t *>(hash), 256, reinterpret_cast<uint32_t *>(hash));
 }
