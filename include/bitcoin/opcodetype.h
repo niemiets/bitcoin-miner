@@ -1,8 +1,10 @@
 #ifndef MINER_OPCODETYPE_H
 #define MINER_OPCODETYPE_H
 
+#include <cstdint>
+
 // source: https://github.com/bitcoin/bitcoin/blob/master/src/script/script.h#L73-L213
-enum opcodetype
+enum opcodetype : uint8_t
 {
     // push value
     OP_0 = 0x00,
