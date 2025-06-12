@@ -262,6 +262,15 @@ int main()
 		.nbits = 0xffff001d,
 		.nonce = 0x1dac2b7c
 	}; // genesis block (height: 0)
+
+	block_header block_candidate = {
+		.version = 0,
+		.time = static_cast<uint32_t>(std::time(nullptr)),
+		.nbits = block_latest.nbits,
+		.nonce = 0
+	};
+
+	hash_block_header(block_latest, reinterpret_cast<uint32_t*>(block_candidate.previous_block_header_hash));
 	
 	message_version msg_version;
 	
