@@ -8,7 +8,7 @@
 struct inventory
 {
 	inventory_type type;
-	uint8_t        hash[32];
+	char           hash[32];
 };
 
 #endif //MINER_INVENTORY_H
