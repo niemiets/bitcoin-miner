@@ -43,6 +43,8 @@ constexpr uint32_t MSG_VERACK_CHECKSUM = std::byteswap(0x5df6e0e2);
 
 constexpr int SUCCESS = 0;
 
+int recv_all(SOCKET &sock, char* buffer, int length, int flags);
+
 int discard(const SOCKET &sock, uint64_t length, int flags = 0);
 
 int recv_message_block(const SOCKET &sock, message_block &msg_block);
@@ -1003,6 +1005,31 @@ int main()
 	return 0;
 }
 
+int recv_all(const SOCKET &sock, char* buffer, int length, int flags)
+{
+	int bytes_total = 0;
+
+	while (bytes_total < length)
+	{
+		const int bytes_count = recv(sock, buffer + bytes_total, length - bytes_total, flags);
+
+		if (bytes_count == SOCKET_ERROR)
+		{
+			std::cerr << "Couldn't receive all data: " << WSAGetLastError() << '\n';
+
+			return SOCKET_ERROR;
+		}
+		else if (bytes_count == 0)
+		{
+			return 0;
+		}
+
+		bytes_total += bytes_count;
+	}
+
+	return bytes_total;
+}
+
 int discard(const SOCKET &sock, uint64_t length, int flags)
 {
 	int bytes_count;
@@ -1010,7 +1037,7 @@ int discard(const SOCKET &sock, uint64_t length, int flags)
 	
 	for (; length > 0; length -= bytes_count)
 	{
-		bytes_count = recv(sock, tmp, static_cast<int>(std::min(length, 4096ULL)), flags);
+		bytes_count = recv_all(sock, tmp, static_cast<int>(std::min(length, 4096ULL)), flags);
 	
 		if (bytes_count == SOCKET_ERROR)
 		{
@@ -1028,7 +1055,7 @@ int discard(const SOCKET &sock, uint64_t length, int flags)
 // TODO: handle 0 bytes_count aka. disconnected
 int recv_message_block(const SOCKET &sock, message_block &msg_block)
 {
-	int bytes_count = recv(sock, reinterpret_cast<char*>(&msg_block.block_header.version), 4, 0);
+	int bytes_count = recv_all(sock, reinterpret_cast<char*>(&msg_block.block_header.version), 4, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1048,7 +1075,7 @@ int recv_message_block(const SOCKET &sock, message_block &msg_block)
 
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_block.block_header.previous_block_header_hash), 32, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char*>(&msg_block.block_header.previous_block_header_hash), 32, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1068,7 +1095,7 @@ int recv_message_block(const SOCKET &sock, message_block &msg_block)
 
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_block.block_header.merkle_root_hash), 32, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char*>(&msg_block.block_header.merkle_root_hash), 32, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1088,7 +1115,7 @@ int recv_message_block(const SOCKET &sock, message_block &msg_block)
 
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_block.block_header.time), 4, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char*>(&msg_block.block_header.time), 4, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1108,7 +1135,7 @@ int recv_message_block(const SOCKET &sock, message_block &msg_block)
 
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_block.block_header.nbits), 4, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char*>(&msg_block.block_header.nbits), 4, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1128,7 +1155,7 @@ int recv_message_block(const SOCKET &sock, message_block &msg_block)
 
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_block.block_header.nonce), 4, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char*>(&msg_block.block_header.nonce), 4, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1187,7 +1214,7 @@ int recv_message_block(const SOCKET &sock, message_block &msg_block)
 
 int recv_message_header(const SOCKET &sock, message_header &msg_header)
 {
-	int bytes_count = recv(sock, msg_header.start_string, 4, 0);
+	int bytes_count = recv_all(sock, msg_header.start_string, 4, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1207,7 +1234,7 @@ int recv_message_header(const SOCKET &sock, message_header &msg_header)
 
 	std::cout << '\n';
 
-	bytes_count = recv(sock, msg_header.command_name, 12, 0);
+	bytes_count = recv_all(sock, msg_header.command_name, 12, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1227,7 +1254,7 @@ int recv_message_header(const SOCKET &sock, message_header &msg_header)
 
 	std::cout << '\n';
 
-	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_header.payload_size), 4, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char*>(&msg_header.payload_size), 4, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1247,7 +1274,7 @@ int recv_message_header(const SOCKET &sock, message_header &msg_header)
 
 	std::cout << '\n';
 
-	bytes_count = recv(sock, msg_header.checksum, 4, 0);
+	bytes_count = recv_all(sock, msg_header.checksum, 4, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1296,7 +1323,7 @@ int recv_message_inv(const SOCKET &sock, message_inv &msg_inv)
 	
 	for (uint64_t i = 0; i < msg_inv.count.data(); i++)
 	{
-		int bytes_count = recv(sock, reinterpret_cast<char*>(&(msg_inv.inventory[i].type)), 4, 0);
+		int bytes_count = recv_all(sock, reinterpret_cast<char*>(&(msg_inv.inventory[i].type)), 4, 0);
 
 		if (bytes_count == SOCKET_ERROR)
 		{
@@ -1316,7 +1343,7 @@ int recv_message_inv(const SOCKET &sock, message_inv &msg_inv)
 	
 		std::cout << '\n';
 		
-		bytes_count = recv(sock, reinterpret_cast<char*>(&(msg_inv.inventory[i].hash)), 32, 0);
+		bytes_count = recv_all(sock, reinterpret_cast<char*>(&(msg_inv.inventory[i].hash)), 32, 0);
 
 		if (bytes_count == SOCKET_ERROR)
 		{
@@ -1342,7 +1369,7 @@ int recv_message_inv(const SOCKET &sock, message_inv &msg_inv)
 
 int recv_message_ping(const SOCKET &sock, message_ping &msg_ping)
 {
-	int bytes_count = recv(sock, reinterpret_cast<char *>(&msg_ping.nonce), 8, 0);
+	int bytes_count = recv_all(sock, reinterpret_cast<char *>(&msg_ping.nonce), 8, 0);
 	
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1367,7 +1394,7 @@ int recv_message_ping(const SOCKET &sock, message_ping &msg_ping)
 
 int recv_message_version(const SOCKET &sock, const message_header &msg_header, message_version &msg_version)
 {
-	int bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.version), 4, 0);
+	int bytes_count = recv_all(sock, reinterpret_cast<char *>(&msg_version.version), 4, 0);
 	
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1387,7 +1414,7 @@ int recv_message_version(const SOCKET &sock, const message_header &msg_header, m
 	
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.services), 8, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char *>(&msg_version.services), 8, 0);
 	
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1407,7 +1434,7 @@ int recv_message_version(const SOCKET &sock, const message_header &msg_header, m
 	
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.timestamp), 8, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char *>(&msg_version.timestamp), 8, 0);
 	
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1427,7 +1454,7 @@ int recv_message_version(const SOCKET &sock, const message_header &msg_header, m
 	
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.addr_recv_services), 8, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char *>(&msg_version.addr_recv_services), 8, 0);
 	
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1447,7 +1474,7 @@ int recv_message_version(const SOCKET &sock, const message_header &msg_header, m
 	
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, msg_version.addr_recv_ip, 16, 0);
+	bytes_count = recv_all(sock, msg_version.addr_recv_ip, 16, 0);
 	
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1467,7 +1494,7 @@ int recv_message_version(const SOCKET &sock, const message_header &msg_header, m
 	
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.addr_recv_port), 2, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char *>(&msg_version.addr_recv_port), 2, 0);
 	
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1487,7 +1514,7 @@ int recv_message_version(const SOCKET &sock, const message_header &msg_header, m
 	
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.addr_trans_services), 8, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char *>(&msg_version.addr_trans_services), 8, 0);
 	
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1507,7 +1534,7 @@ int recv_message_version(const SOCKET &sock, const message_header &msg_header, m
 	
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, msg_version.addr_trans_ip, 16, 0);
+	bytes_count = recv_all(sock, msg_version.addr_trans_ip, 16, 0);
 	
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1527,7 +1554,7 @@ int recv_message_version(const SOCKET &sock, const message_header &msg_header, m
 	
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.addr_trans_port), 2, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char *>(&msg_version.addr_trans_port), 2, 0);
 	
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1547,7 +1574,7 @@ int recv_message_version(const SOCKET &sock, const message_header &msg_header, m
 	
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char *>(&msg_version.nonce), 8, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char *>(&msg_version.nonce), 8, 0);
 	
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1587,7 +1614,7 @@ int recv_message_version(const SOCKET &sock, const message_header &msg_header, m
 	
 	msg_version.user_agent = new char[msg_version.user_agent_bytes.data()];
 
-	bytes_count = recv(sock, msg_version.user_agent, (int32_t)msg_version.user_agent_bytes.data(), 0);
+	bytes_count = recv_all(sock, msg_version.user_agent, (int32_t)msg_version.user_agent_bytes.data(), 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1607,7 +1634,7 @@ int recv_message_version(const SOCKET &sock, const message_header &msg_header, m
 
 	std::cout << '\n';
 
-	bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.start_height), 4, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char*>(&msg_version.start_height), 4, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1629,7 +1656,7 @@ int recv_message_version(const SOCKET &sock, const message_header &msg_header, m
 	
 	if (msg_header.payload_size - (MSG_VERSION_MIN_SIZE + msg_version.user_agent_bytes.size() - 1) > 0)
 	{
-		bytes_count = recv(sock, reinterpret_cast<char*>(&msg_version.relay), 1, 0);
+		bytes_count = recv_all(sock, reinterpret_cast<char*>(&msg_version.relay), 1, 0);
 	
 		if (bytes_count == SOCKET_ERROR)
 		{
@@ -1659,7 +1686,7 @@ int recv_compact_size_uint(const SOCKET &sock, compact_size_uint &cmpct)
 
 	uint64_t value;
 
-	int bytes_count = recv(sock, reinterpret_cast<char*>(&value), 1, 0);
+	int bytes_count = recv_all(sock, reinterpret_cast<char*>(&value), 1, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1687,7 +1714,7 @@ int recv_compact_size_uint(const SOCKET &sock, compact_size_uint &cmpct)
 
 	if (size != 0)
 	{
-		bytes_count = recv(sock, reinterpret_cast<char*>(&value), size, 0);
+		bytes_count = recv_all(sock, reinterpret_cast<char*>(&value), size, 0);
 
 		if (bytes_count == SOCKET_ERROR)
 		{
@@ -1731,7 +1758,7 @@ int recv_compact_size_uint(const SOCKET &sock, compact_size_uint &cmpct)
 
 int recv_raw_transaction(const SOCKET &sock, raw_transaction &transaction)
 {
-	int bytes_count = recv(sock, reinterpret_cast<char*>(&transaction.version), 4, 0);
+	int bytes_count = recv_all(sock, reinterpret_cast<char*>(&transaction.version), 4, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1819,7 +1846,7 @@ int recv_raw_transaction(const SOCKET &sock, raw_transaction &transaction)
 		std::cout << "Received transaction output.\n";
 	}
 	
-	bytes_count = recv(sock, reinterpret_cast<char*>(&transaction.lock_time), 4, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char*>(&transaction.lock_time), 4, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1875,7 +1902,7 @@ int recv_tx_in(const SOCKET &sock, tx_in &tx)
 	
 	tx.signature_script = new char[tx.script_bytes.data()];
 	
-	int bytes_count = recv(sock, reinterpret_cast<char*>(tx.signature_script), static_cast<int>(tx.script_bytes.data()), 0);
+	int bytes_count = recv_all(sock, reinterpret_cast<char*>(tx.signature_script), static_cast<int>(tx.script_bytes.data()), 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1895,7 +1922,7 @@ int recv_tx_in(const SOCKET &sock, tx_in &tx)
 
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char*>(&tx.sequence), 4, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char*>(&tx.sequence), 4, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1920,7 +1947,7 @@ int recv_tx_in(const SOCKET &sock, tx_in &tx)
 
 int recv_tx_out(const SOCKET &sock, tx_out &tx)
 {
-	int bytes_count = recv(sock, reinterpret_cast<char*>(&tx.value), 8, 0);
+	int bytes_count = recv_all(sock, reinterpret_cast<char*>(&tx.value), 8, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1960,7 +1987,7 @@ int recv_tx_out(const SOCKET &sock, tx_out &tx)
 	
 	tx.pk_script = new char[tx.pk_script_bytes.data()];
 	
-	bytes_count = recv(sock, reinterpret_cast<char*>(tx.pk_script), static_cast<int>(tx.pk_script_bytes.data()), 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char*>(tx.pk_script), static_cast<int>(tx.pk_script_bytes.data()), 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -1985,7 +2012,7 @@ int recv_tx_out(const SOCKET &sock, tx_out &tx)
 
 int recv_outpoint(const SOCKET &sock, outpoint &outpoint)
 {
-	int bytes_count = recv(sock, reinterpret_cast<char*>(outpoint.hash), 32, 0);
+	int bytes_count = recv_all(sock, reinterpret_cast<char*>(outpoint.hash), 32, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -2005,7 +2032,7 @@ int recv_outpoint(const SOCKET &sock, outpoint &outpoint)
 
 	std::cout << '\n';
 	
-	bytes_count = recv(sock, reinterpret_cast<char*>(&outpoint.index), 4, 0);
+	bytes_count = recv_all(sock, reinterpret_cast<char*>(&outpoint.index), 4, 0);
 
 	if (bytes_count == SOCKET_ERROR)
 	{
@@ -2128,4 +2155,29 @@ bool is_data_available(const SOCKET &sock)
 
     int result = select(0, &readfds, nullptr, nullptr, &timeout);
     return result > 0 && FD_ISSET(sock, &readfds);
+}
+
+int recv_all(SOCKET &sock, char* buffer, int length, int flags)
+{
+	int bytes_total = 0;
+
+	while (bytes_total < length)
+	{
+		int bytes_count = recv(sock, buffer + bytes_total, length - bytes_total, flags);
+
+		if (bytes_count == SOCKET_ERROR)
+		{
+			std::cerr << "Couldn't receive all data: " << WSAGetLastError() << '\n';
+
+			return SOCKET_ERROR;
+		}
+		else if (bytes_count == 0)
+		{
+			return 0;
+		}
+
+		bytes_total += bytes_count;
+	}
+
+	return bytes_total;
 }
