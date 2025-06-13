@@ -448,7 +448,7 @@ int main()
 					hash_block_header(block_latest, reinterpret_cast<uint32_t *>(hash));
 					
 					compact_size_uint hash_count(1);
-					char *stop_hash = reinterpret_cast<char *>(calloc(32, sizeof(char)));
+					char *stop_hash = static_cast<char *>(calloc(32, sizeof(char)));
 					
 					std::vector<char> payload_buffer(MSG_GETHEADERS_MIN_SIZE - 1 + hash_count.size() + (hash_count.data() * sizeof(inventory)));
 					const std::span payload_span(payload_buffer);
@@ -477,7 +477,7 @@ int main()
 					.write(reinterpret_cast<const char *>(start_string), 4)
 					.write(reinterpret_cast<const char *>(command_name), 12)
 					.write(reinterpret_cast<const char *>(&payload_size), 4)
-					.write(reinterpret_cast<const char *>(&checksum), 4);
+					.write(reinterpret_cast<const char *>(checksum), 4);
 					
 					std::cout << "Message header:\n";
 					
@@ -577,7 +577,7 @@ int main()
 					.write(reinterpret_cast<const char *>(start_string), 4)
 					.write(reinterpret_cast<const char *>(command_name), 12)
 					.write(reinterpret_cast<const char *>(&payload_size), 4)
-					.write(reinterpret_cast<const char *>(&checksum), 4);
+					.write(reinterpret_cast<const char *>(checksum), 4);
 					
 					std::cout << "Message header:\n";
 					
@@ -699,7 +699,7 @@ int main()
 					.write(reinterpret_cast<const char *>(start_string), 4)
 					.write(reinterpret_cast<const char *>(command_name), 12)
 					.write(reinterpret_cast<const char *>(&payload_size), 4)
-					.write(reinterpret_cast<const char *>(&checksum), 4);
+					.write(reinterpret_cast<const char *>(checksum), 4);
 					
 					std::cout << "Message header:\n";
 					
@@ -824,7 +824,7 @@ int main()
 					.write(reinterpret_cast<const char *>(start_string), 4)
 					.write(reinterpret_cast<const char *>(command_name), 12)
 					.write(reinterpret_cast<const char *>(&payload_size), 4)
-					.write(reinterpret_cast<const char *>(&checksum), 4);
+					.write(reinterpret_cast<const char *>(checksum), 4);
 					
 					std::cout << "Message header:\n";
 					
