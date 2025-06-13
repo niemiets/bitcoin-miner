@@ -22,8 +22,6 @@ make
 
 ### Launch
 
-> Sometimes have to launch it more than once cause probably memory not allocated or something like that. After running for some time it crashes.
-
 ```bash
 ./miner.exe
 ```
