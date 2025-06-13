@@ -44,6 +44,8 @@ compact_size_uint::compact_size_uint(uint64_t value)
 	{
 		_size_ptr = static_cast<uint8_t*>(malloc(sizeof(uint8_t)));
 		_data_ptr = reinterpret_cast<uint64_t*>(_size_ptr);
+
+		*_size_ptr = static_cast<uint8_t>(value);
 	}
 	else if (value <= 0xFFFF)
 	{
@@ -51,7 +53,7 @@ compact_size_uint::compact_size_uint(uint64_t value)
 		_data_ptr = reinterpret_cast<uint64_t*>(_size_ptr + sizeof(uint8_t));
 		
 		*_size_ptr = 0xFD;
-		*_data_ptr = value;
+		*_data_ptr = static_cast<uint16_t>(value);
 	}
 	else if (value <= 0xFFFFFFFF)
 	{
@@ -59,7 +61,7 @@ compact_size_uint::compact_size_uint(uint64_t value)
 		_data_ptr = reinterpret_cast<uint64_t*>(_size_ptr + sizeof(uint8_t));
 		
 		*_size_ptr = 0xFE;
-		*_data_ptr = value;
+		*_data_ptr = static_cast<uint32_t>(value);
 	}
 	else if (value <= 0xFFFFFFFFFFFFFFFF)
 	{
