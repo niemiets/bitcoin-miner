@@ -193,7 +193,7 @@ int main()
 		.write(reinterpret_cast<const char *>(&addr_trans_port), 2)
 		.write(reinterpret_cast<const char *>(&nonce), 8)
 		.write(reinterpret_cast<const char *>(*user_agent_bytes), user_agent_bytes.size())
-		.write(reinterpret_cast<const char *>(user_agent), (long long)user_agent_bytes.data())
+		.write(reinterpret_cast<const char *>(user_agent), static_cast<std::streamsize>(user_agent_bytes.data()))
 		.write(reinterpret_cast<const char *>(&start_height), 4)
 		.write(reinterpret_cast<const char *>(&relay), 1);
 		

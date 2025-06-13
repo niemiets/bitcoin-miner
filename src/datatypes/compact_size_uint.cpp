@@ -42,7 +42,7 @@ compact_size_uint::compact_size_uint(uint64_t value)
 {
 	if (value <= 0xFC)
 	{
-		_size_ptr = new uint8_t(value);
+		_size_ptr = static_cast<uint8_t*>(malloc(sizeof(uint8_t)));
 		_data_ptr = reinterpret_cast<uint64_t*>(_size_ptr);
 	}
 	else if (value <= 0xFFFF)
@@ -75,6 +75,9 @@ compact_size_uint::~compact_size_uint()
 {
 	if (_size_ptr != nullptr)
 		free(_size_ptr);
+
+	_size_ptr = nullptr;
+	_data_ptr = nullptr;
 }
 
 compact_size_uint& compact_size_uint::operator=(const compact_size_uint &other)
@@ -84,7 +87,8 @@ compact_size_uint& compact_size_uint::operator=(const compact_size_uint &other)
 
 	if (this->size() != other.size())
 	{
-		free(_size_ptr);
+		if (_size_ptr != nullptr)
+			free(_size_ptr);
 
 		_size_ptr = static_cast<uint8_t*>(malloc(other.size()));
 
